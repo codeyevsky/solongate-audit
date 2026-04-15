@@ -1,0 +1,46 @@
+{
+  "name": "solongate-audit",
+  "version": "0.1.0",
+  "description": "Security audit CLI for AI agent projects — OWASP Agentic Top 10",
+  "type": "module",
+  "bin": {
+    "solongate-audit": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "ai-security",
+    "owasp",
+    "agentic-top-10",
+    "solongate",
+    "mcp",
+    "audit",
+    "security-scanner",
+    "cli"
+  ],
+  "author": "SolonGate <hello@solongate.com>",
+  "license": "MIT",
+  "homepage": "https://solongate.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/solongate/solongate-audit"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "@types/node": "^20.0.0"
+  }
+}
