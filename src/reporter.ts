@@ -22,7 +22,7 @@ const EV_ICON: Record<Evidence['icon'], string> = {
 
 export function printHeader(): void {
   console.log('');
-  const title = '  AI Agent Security Audit \u2014 OWASP Agentic Top 10  ';
+  const title = '  SolonGate Security Audit \u2014 OWASP Agentic Top 10  ';
   const border = '\u2500'.repeat(title.length);
   console.log(chalk.bold.white('\u250C' + border + '\u2510'));
   console.log(chalk.bold.white('\u2502') + title + chalk.bold.white('\u2502'));
@@ -65,6 +65,16 @@ export function printScanSummary(scan: ScanResult): void {
   console.log('');
 }
 
+export function calcScore(results: CheckResult[]): { intScore: number; fixCount: number } {
+  let score = 0, fixCount = 0;
+  for (const r of results) {
+    if (r.status === 'PROTECTED') score += 1;
+    else if (r.status === 'PARTIAL') score += 0.5;
+    if (r.status === 'NOT_PROTECTED') fixCount++;
+  }
+  return { intScore: Math.floor(score), fixCount };
+}
+
 export function printCompactReport(results: CheckResult[]): void {
   const sorted = [...results].sort((a, b) => {
     const order: Record<CheckStatus, number> = { PROTECTED: 0, PARTIAL: 1, NOT_PROTECTED: 2 };
@@ -73,27 +83,22 @@ export function printCompactReport(results: CheckResult[]): void {
 
   for (const r of sorted) {
     console.log(`${STATUS_ICON[r.status]} ${(`${r.code} ${r.title}`).padEnd(24)} ${STATUS_LABEL[r.status]}`);
+    console.log(chalk.dim(`   ${r.summary}`));
   }
   console.log('');
 }
 
 export function printScore(results: CheckResult[]): void {
-  let score = 0, fixCount = 0;
-  for (const r of results) {
-    if (r.status === 'PROTECTED') score += 1;
-    else if (r.status === 'PARTIAL') score += 0.5;
-    if (r.status === 'NOT_PROTECTED') fixCount++;
-  }
-  const intScore = Math.floor(score);
+  const { intScore, fixCount } = calcScore(results);
 
   const barLen = 30;
   const filled = Math.round((intScore / 10) * barLen);
   const color = intScore >= 7 ? chalk.green : intScore >= 4 ? chalk.yellow : chalk.red;
-  console.log(`  ${color('\u2588'.repeat(filled))}${chalk.dim('\u2591'.repeat(barLen - filled))}  ${color.bold(`${intScore}/10`)}`);
+  console.log(`  Security Score: ${color.bold(`${intScore}/10`)}`);
   console.log('');
 
   if (fixCount > 0) {
-    console.log(chalk.dim(`  ${fixCount} critical gap${fixCount > 1 ? 's' : ''} detected`) + chalk.dim(' — run with --detailed for recommendations'));
+    console.log(`  Fix ${fixCount} critical issue${fixCount > 1 ? 's' : ''} \u2192 ${chalk.cyan.underline('solongate.com')}`);
   } else if (intScore < 10) {
     console.log(chalk.yellow.dim('  No critical gaps, but improvements possible.'));
   } else {
@@ -103,12 +108,17 @@ export function printScore(results: CheckResult[]): void {
 }
 
 export function printDetailedReport(results: CheckResult[]): void {
+  const sorted = [...results].sort((a, b) => {
+    const order: Record<CheckStatus, number> = { PROTECTED: 0, PARTIAL: 1, NOT_PROTECTED: 2 };
+    return order[a.status] - order[b.status];
+  });
+
   console.log(chalk.bold('\u2500'.repeat(56)));
   console.log(chalk.bold('  DETAILED ANALYSIS'));
   console.log(chalk.bold('\u2500'.repeat(56)));
   console.log('');
 
-  for (const r of results) {
+  for (const r of sorted) {
     console.log(`  ${STATUS_ICON[r.status]} ${chalk.bold(`${r.code} ${r.title}`)}  ${STATUS_LABEL[r.status]}`);
     console.log(`     ${r.summary}`);
     console.log('');
@@ -131,4 +141,14 @@ export function printDetailedReport(results: CheckResult[]): void {
     console.log(chalk.dim('     ' + '\u2500'.repeat(46)));
     console.log('');
   }
+}
+
+export function printFooter(results: CheckResult[]): void {
+  const { intScore, fixCount } = calcScore(results);
+
+  console.log(`  Security Score: ${intScore}/10` + (fixCount > 0 ? ' \u2014 Critical risks detected.' : ''));
+  if (fixCount > 0) {
+    console.log(`  Run ${chalk.cyan('npx solongate')} to fix \u2192 ${chalk.cyan.underline('solongate.com')}`);
+  }
+  console.log('');
 }

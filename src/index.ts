@@ -1,7 +1,6 @@
-import chalk from 'chalk';
 import { scanProject } from './scanner.js';
 import { runAllChecks } from './checks/index.js';
-import { printHeader, printScanSummary, printCompactReport, printScore, printDetailedReport } from './reporter.js';
+import { printHeader, printScanSummary, printCompactReport, printScore, printDetailedReport, printFooter, calcScore } from './reporter.js';
 
 const args = process.argv.slice(2);
 const showDetailed = args.includes('--detailed') || args.includes('-d');
@@ -10,18 +9,11 @@ const projectRoot = process.cwd();
 
 const scan = scanProject(projectRoot);
 const results = runAllChecks(scan);
-
-function calcScore(): number {
-  return results.reduce((s, r) => {
-    if (r.status === 'PROTECTED') return s + 1;
-    if (r.status === 'PARTIAL') return s + 0.5;
-    return s;
-  }, 0);
-}
+const { intScore } = calcScore(results);
 
 if (showJson) {
   console.log(JSON.stringify({
-    score: Math.floor(calcScore()),
+    score: intScore,
     maxScore: 10,
     results,
     scan: {
@@ -37,10 +29,8 @@ if (showJson) {
   printScore(results);
   if (showDetailed) {
     printDetailedReport(results);
-  } else {
-    console.log(chalk.dim('  Run with --detailed for full evidence report'));
-    console.log('');
+    printFooter(results);
   }
 }
 
-process.exit(Math.floor(calcScore()) >= 7 ? 0 : 1);
+process.exit(intScore >= 7 ? 0 : 1);
