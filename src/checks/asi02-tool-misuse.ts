@@ -64,6 +64,6 @@ export function checkToolMisuse(scan: ScanResult): CheckResult {
     code, title, status: 'NOT_PROTECTED', evidence,
     summary: 'No tool access restrictions. Agents can misuse any tool freely.',
     details: 'Agents can delete data, invoke costly APIs, exfiltrate information, or chain tools in unintended ways with no policy enforcement.',
-    recommendation: 'Create policy.json with DENY rules and enforce via MCP proxy. → npx solongate init',
+    recommendation: 'Create policy.json with DENY rules and enforce via MCP proxy.',
   };
 }

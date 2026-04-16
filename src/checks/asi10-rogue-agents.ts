@@ -59,6 +59,6 @@ export function checkRogueAgents(scan: ScanResult): CheckResult {
     code, title, status: 'NOT_PROTECTED', evidence,
     summary: 'No kill switch. Rogue agents cannot be stopped.',
     details: 'No policy, no stop hook, no shutdown mechanism. If an agent becomes rogue (misaligned goals, autonomous escalation, infinite loops), there is no way to detect or stop it.',
-    recommendation: 'Create policy.json with deny-all rule. Add stop hook. Set up MCP proxy. → npx solongate init',
+    recommendation: 'Create policy.json with deny-all rule. Add stop hook. Set up MCP proxy.',
   };
 }

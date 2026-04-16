@@ -20,7 +20,7 @@ function claudeDesktopPath(): string[] {
   return [join(h, '.config', 'Claude', 'claude_desktop_config.json')];
 }
 
-const PROXIES = ['@solongate/proxy', 'solongate-proxy', 'mcp-proxy', 'mcp-guard', 'mcp-firewall'];
+const PROXIES = ['mcp-proxy', 'mcp-guard', 'mcp-firewall', 'mcp-gateway', '@solongate/proxy', 'solongate-proxy'];
 
 function detectProxy(srv: McpServerConfig): string | null {
   const full = [srv.command, ...(srv.args ?? [])].join(' ').toLowerCase();
@@ -58,7 +58,7 @@ export function scanProject(root: string): ScanResult {
   const openclawConfig = tryJson<McpConfigFile>(root, ['.openclaw/mcp.json', '.openclaw/config.json']);
   const claudeSettings = tryJson<HookConfig>(root, ['.claude/settings.json']);
   const geminiSettings = tryJson<HookConfig>(root, ['.gemini/settings.json']);
-  const policyConfig = tryJson<PolicySet>(root, ['policy.json', 'solongate.json', 'solongate.config.json', 'mcp-policy.json', 'agent-policy.json']);
+  const policyConfig = tryJson<PolicySet>(root, ['policy.json', 'mcp-policy.json', 'agent-policy.json', 'security-policy.json']);
   const packageJson = tryJson<PackageJson>(root, ['package.json']);
 
   let claudeDesktopConfig: ConfigFile<McpConfigFile> | null = null;
@@ -140,9 +140,9 @@ export function scanProject(root: string): ScanResult {
 
     hasPreToolHook: !!(ch?.PreToolUse?.length || gh?.PreToolUse?.length),
     hasPostToolHook: !!(ch?.PostToolUse?.length || gh?.PostToolUse?.length),
-    hasStopHook: !!(ch?.Stop?.length) || existsSync(resolve(root, '.solongate', 'hooks', 'stop.mjs')),
-    hasGuardHook: existsSync(resolve(root, '.solongate', 'hooks', 'guard.mjs')),
-    hasAuditHook: existsSync(resolve(root, '.solongate', 'hooks', 'audit.mjs')),
+    hasStopHook: !!(ch?.Stop?.length),
+    hasGuardHook: ['.hooks/guard.mjs', '.hooks/guard.js', 'hooks/guard.mjs', 'hooks/guard.js'].some((f) => existsSync(resolve(root, f))),
+    hasAuditHook: ['.hooks/audit.mjs', '.hooks/audit.js', 'hooks/audit.mjs', 'hooks/audit.js'].some((f) => existsSync(resolve(root, f))),
 
     hasDockerfile: existsSync(resolve(root, 'Dockerfile')),
     hasGitignore: !!gitignoreText,

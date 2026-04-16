@@ -44,7 +44,7 @@ export function printScanSummary(scan: ScanResult): void {
   if (scan.geminiSettings) found.push('.gemini/settings.json');
   if (scan.cursorConfig) found.push('.cursor/mcp.json');
   if (scan.openclawConfig) found.push('.openclaw/');
-  if (scan.hasGuardHook || scan.hasAuditHook) found.push('.solongate/hooks/');
+  if (scan.hasGuardHook || scan.hasAuditHook) found.push('hooks/');
   if (scan.hasDockerfile) found.push('Dockerfile');
   if (scan.hasLockFile) found.push('lock file');
   if (scan.hasDependabot) found.push('dependabot');
@@ -93,7 +93,7 @@ export function printScore(results: CheckResult[]): void {
   console.log('');
 
   if (fixCount > 0) {
-    console.log(chalk.dim(`  ${fixCount} critical gap${fixCount > 1 ? 's' : ''} detected \u2192 `) + chalk.cyan.underline('solongate.com'));
+    console.log(chalk.dim(`  ${fixCount} critical gap${fixCount > 1 ? 's' : ''} detected`) + chalk.dim(' — run with --detailed for recommendations'));
   } else if (intScore < 10) {
     console.log(chalk.yellow.dim('  No critical gaps, but improvements possible.'));
   } else {

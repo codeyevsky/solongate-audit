@@ -71,6 +71,6 @@ export function checkGoalHijacking(scan: ScanResult): CheckResult {
     code, title, status: 'NOT_PROTECTED', evidence,
     summary: 'No prompt injection defense. Agent goals can be hijacked via malicious input.',
     details: 'Attackers can override agent goals through prompt injection in documents, web pages, emails, or tool outputs. No input validation or intent verification exists.',
-    recommendation: 'Add MCP proxy with input guard for prompt injection detection. → npx solongate init',
+    recommendation: 'Add MCP proxy with input guard for prompt injection detection.',
   };
 }

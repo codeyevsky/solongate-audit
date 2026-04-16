@@ -12,7 +12,7 @@ export function checkMemoryPoisoning(scan: ScanResult): CheckResult {
   const evidence: Evidence[] = [];
 
   // Response scanning requires active analysis of tool outputs
-  // Currently: SolonGate proxy has response scanner, but this is a known limitation area
+  // Response scanning is a known limitation — most proxies don't scan tool outputs yet
   const hasProxy = scan.proxiedCount > 0;
 
   // Post-tool hooks (can observe but typically don't block)
