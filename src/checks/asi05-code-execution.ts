@@ -1,10 +1,9 @@
 import type { ScanResult, CheckResult, Evidence } from '../types.js';
 
 // OWASP ASI05: Unexpected Code Execution (RCE)
-// Agent executes arbitrary code — shell commands, scripts, eval() — via injection or misuse.
-// PROTECTED = sandboxed execution + command restrictions + input guard
-// PARTIAL = input guard catches shell injection OR command restrictions exist (but no sandbox)
-// NOT_PROTECTED = no restrictions on code execution
+// Agents execute unvetted code, including sandbox escapes and command injection.
+// OWASP mitigations: REVIEW decision for code execution tools with human approval,
+// route to specific reviewer groups, combine with input scanning, sandboxing.
 
 export function checkCodeExecution(scan: ScanResult): CheckResult {
   const code = 'ASI05';
@@ -14,6 +13,20 @@ export function checkCodeExecution(scan: ScanResult): CheckResult {
   const hasProxy = scan.proxiedCount > 0;
   const hasInputGuard = hasProxy && !scan.hasNoInputGuardFlag;
   const hasDocker = scan.hasDockerfile;
+
+  // OWASP: REVIEW decision — require human approval for code execution tools
+  if (scan.hasReviewDecision) {
+    evidence.push({ icon: 'found', text: 'REVIEW decision configured — code execution requires human approval' });
+  } else {
+    evidence.push({ icon: 'missing', text: 'No REVIEW decision — code execution not routed for human approval (OWASP: highest-friction operation)' });
+  }
+
+  // OWASP: Specific restrictions on code exec tools
+  if (scan.hasCodeExecRestriction) {
+    evidence.push({ icon: 'found', text: 'Code execution tools (shell_exec, run_python, eval_js) explicitly restricted in policy' });
+  } else {
+    evidence.push({ icon: 'missing', text: 'No specific restrictions on code execution tools in policy' });
+  }
 
   // Command restrictions in policy
   if (scan.hasCommandRestrictions) {
@@ -49,31 +62,40 @@ export function checkCodeExecution(scan: ScanResult): CheckResult {
     evidence.push({ icon: 'warn', text: `Shell-capable servers without proxy: ${shellServers.map((s) => s.name).join(', ')}` });
   }
 
-  // PROTECTED = sandbox + restrictions (defense in depth)
+  // PROTECTED = REVIEW decision + sandbox + restrictions (OWASP: make code exec highest-friction)
+  if (scan.hasReviewDecision && hasDocker && (scan.hasCommandRestrictions || hasInputGuard)) {
+    return {
+      code, title, status: 'PROTECTED', evidence,
+      summary: 'Code execution requires human approval and runs in sandbox.',
+      details: 'REVIEW decision routes code execution for human approval. Container isolation limits blast radius. Input guard and command restrictions provide defense in depth.',
+    };
+  }
+
+  // Also PROTECTED without REVIEW if sandbox + restrictions
   if (hasDocker && (scan.hasCommandRestrictions || hasInputGuard)) {
     return {
       code, title, status: 'PROTECTED', evidence,
       summary: 'Code execution sandboxed and restricted.',
-      details: 'Container isolation limits blast radius. Command restrictions and/or input guard prevent shell injection. Defense in depth against RCE.',
+      details: 'Container isolation limits blast radius. Command restrictions and/or input guard prevent shell injection. Defense in depth against RCE. Add REVIEW decision for full OWASP compliance.',
     };
   }
 
-  // PARTIAL = either input guard catches injection OR command restrictions exist
-  if (hasInputGuard || scan.hasCommandRestrictions || scan.hasPreToolHook) {
+  // PARTIAL = some restrictions but no sandbox or human approval
+  if (hasInputGuard || scan.hasCommandRestrictions || scan.hasPreToolHook || scan.hasCodeExecRestriction) {
     return {
       code, title, status: 'PARTIAL', evidence,
-      summary: 'Some code execution restrictions, but no sandboxing.',
+      summary: 'Some code execution restrictions, but no sandboxing or human approval.',
       details: hasInputGuard
-        ? 'Input guard catches known shell injection patterns (command separators, encoding tricks). But code still runs on host — a bypass means full system access.'
-        : 'Command restrictions block specific dangerous commands, but execution happens on the host system without isolation.',
-      recommendation: 'Add Dockerfile for sandboxed execution. Input guard + sandbox = defense in depth.',
+        ? 'Input guard catches known shell injection patterns. But code runs on host — a bypass means full system access. No human approval (REVIEW decision) for code execution.'
+        : 'Command restrictions block specific dangerous commands. No sandbox isolation. No human approval gate.',
+      recommendation: 'Add Dockerfile for sandbox. Add REVIEW decision for code exec tools. Input guard + sandbox + human approval = OWASP compliant.',
     };
   }
 
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
     summary: 'No code execution restrictions. Full RCE possible.',
-    details: 'Agents can execute arbitrary shell commands, scripts, and code on the host system. No input validation, no command restrictions, no sandboxing. This is the highest-risk vulnerability.',
-    recommendation: 'Add MCP proxy with input guard + command restrictions in policy.json + Dockerfile for sandboxing.',
+    details: 'Agents can execute arbitrary shell commands, scripts, and code on the host system. No input validation, no command restrictions, no sandboxing, no human approval. OWASP says: make code execution the highest-friction operation.',
+    recommendation: 'Add REVIEW decision for code exec tools. Add sandbox (Dockerfile). Add input guard + command restrictions.',
   };
 }

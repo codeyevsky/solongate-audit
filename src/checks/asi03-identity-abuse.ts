@@ -1,10 +1,9 @@
 import type { ScanResult, CheckResult, Evidence } from '../types.js';
 
 // OWASP ASI03: Identity and Privilege Abuse
-// Agents inherit or escalate privileges, impersonate users, or access resources beyond their scope.
-// PROTECTED = per-agent credentials + trust map + active privilege enforcement
-// PARTIAL = identity tracked (logs show who), but no active blocking/scoping
-// NOT_PROTECTED = no identity tracking at all
+// Agents claim unauthorized identities or accumulate excessive permissions (confused deputy).
+// OWASP mitigations: principal binding, strict identity mode, verified identity in receipts,
+// reject calls where key identity doesn't match actual principal.
 
 export function checkIdentityAbuse(scan: ScanResult): CheckResult {
   const code = 'ASI03';
@@ -16,34 +15,47 @@ export function checkIdentityAbuse(scan: ScanResult): CheckResult {
   const hasGroups = scan.agentGroups.length > 0;
   const hasRelationships = scan.trustRelationships > 0;
 
-  // Agent identity detection
-  if (hasProxy) {
-    evidence.push({ icon: 'found', text: 'MCP proxy detects agent identity via clientInfo' });
-    evidence.push({ icon: 'info', text: '  Logs show which agent (claude-code, cursor, etc.) made each call' });
+  // OWASP: Principal binding — bind API keys to specific agent identities
+  if (scan.hasPrincipalBinding) {
+    evidence.push({ icon: 'found', text: 'Principal binding — API keys bound to specific agent identities' });
   } else {
-    evidence.push({ icon: 'missing', text: 'No proxy — agent identity not tracked' });
+    evidence.push({ icon: 'missing', text: 'No principal binding — API keys not bound to agent identities (OWASP: bind keys to principals)' });
   }
 
-  // Trust map
+  // OWASP: Strict identity mode — reject mismatched identity claims
+  if (scan.hasStrictIdentityMode) {
+    evidence.push({ icon: 'found', text: 'Strict identity mode — rejects calls where claimed identity ≠ verified principal' });
+  } else {
+    evidence.push({ icon: 'missing', text: 'No strict identity mode — agents can self-report identity without verification' });
+  }
+
+  // Agent identity detection via proxy
+  if (hasProxy) {
+    evidence.push({ icon: 'found', text: 'MCP proxy detects agent identity via clientInfo' });
+    evidence.push({ icon: 'warn', text: '  Identity is detected but not cryptographically verified' });
+  } else {
+    evidence.push({ icon: 'missing', text: 'No proxy — agent identity not tracked at all' });
+  }
+
+  // Trust map with per-agent privilege boundaries
   if (hasTrustMap) {
     evidence.push({ icon: 'found', text: 'Agent trust map configured in policy' });
     if (hasGroups) evidence.push({ icon: 'found', text: `  Groups: ${scan.agentGroups.join(', ')}` });
-    if (hasRelationships) evidence.push({ icon: 'found', text: `  ${scan.trustRelationships} trust relationship(s)` });
+    if (hasRelationships) evidence.push({ icon: 'found', text: `  ${scan.trustRelationships} trust relationship(s) with privilege scoping` });
   } else {
-    evidence.push({ icon: 'missing', text: 'No agent trust map — all agents have equal access' });
+    evidence.push({ icon: 'missing', text: 'No agent trust map — all agents have equal, unrestricted access' });
   }
 
-  // Audit hooks (who did what)
+  // Audit hooks (who did what — but logs only)
   if (scan.hasPostToolHook || scan.hasAuditHook) {
     evidence.push({ icon: 'found', text: 'Audit logging — records which agent performed which action' });
     evidence.push({ icon: 'warn', text: '  Logs only — does not actively prevent privilege abuse' });
   } else {
-    evidence.push({ icon: 'missing', text: 'No audit logging of agent actions' });
+    evidence.push({ icon: 'missing', text: 'No audit logging — no record of which agent did what' });
   }
 
-  // Per-server env keys
+  // Per-server scoped API keys/tokens
   const serversWithKeys = scan.servers.filter((s) => {
-    // Check if the original config has env with API_KEY/TOKEN
     const configs = [scan.mcpConfig, scan.claudeDesktopConfig, scan.cursorConfig, scan.geminiConfig, scan.openclawConfig].filter(Boolean);
     for (const cfg of configs) {
       const srv = cfg!.content.mcpServers?.[s.name];
@@ -55,29 +67,32 @@ export function checkIdentityAbuse(scan: ScanResult): CheckResult {
     evidence.push({ icon: 'found', text: `${serversWithKeys.length} server(s) with scoped API keys/tokens` });
   }
 
-  // PROTECTED requires active enforcement: trust map with relationships + proxy
-  if (hasTrustMap && hasRelationships && hasProxy) {
+  // OWASP: Verified principal in every receipt
+  evidence.push({ icon: 'missing', text: 'No verified principal in audit receipts (OWASP: record verified, not claimed identity)' });
+
+  // PROTECTED: principal binding + strict identity + trust map + proxy
+  if (scan.hasPrincipalBinding && scan.hasStrictIdentityMode && hasTrustMap && hasProxy) {
     return {
       code, title, status: 'PROTECTED', evidence,
-      summary: 'Agent identities verified and privileges actively enforced.',
-      details: 'Agent trust map defines who can do what. Trust relationships enforce privilege boundaries. Proxy blocks unauthorized access.',
+      summary: 'Agent identities verified via principal binding with active privilege enforcement.',
+      details: 'API keys bound to agent identities. Strict identity mode rejects mismatched claims. Trust map enforces per-agent privileges. Proxy blocks unauthorized access.',
     };
   }
 
-  // PARTIAL: identity is tracked, logs exist, but no active blocking
-  if (hasProxy || scan.hasPostToolHook || scan.hasAuditHook) {
+  // PARTIAL: identity is tracked via proxy/logs, but no principal binding or strict verification
+  if (hasProxy || hasTrustMap || scan.hasPostToolHook || scan.hasAuditHook) {
     return {
       code, title, status: 'PARTIAL', evidence,
-      summary: 'Agent identity tracked in logs, but no active privilege enforcement.',
-      details: 'You can see which agent did what (audit trail), but agents are not actively prevented from accessing resources beyond their scope. No per-agent privilege boundaries.',
-      recommendation: 'Add agentTrustMap with groups and relationships to policy.json for active enforcement.',
+      summary: 'Agent identity tracked in logs, but no principal binding or strict verification.',
+      details: 'You can see which agent did what (audit trail), but identity is self-reported, not cryptographically verified. No principal binding means API keys are not tied to specific agents. Any agent can claim any identity.',
+      recommendation: 'Add principal binding (bind API keys to agent identities). Enable strict identity mode. Add agentTrustMap for per-agent privileges.',
     };
   }
 
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
     summary: 'No agent identity tracking or privilege control.',
-    details: 'Agents are anonymous. No identity detection, no per-agent permissions, no audit trail of who did what. Any agent can act with full privileges.',
-    recommendation: 'Set up MCP proxy (tracks identity) and agentTrustMap (enforces privileges).',
+    details: 'Agents are anonymous. No identity detection, no principal binding, no per-agent permissions, no audit trail. Any agent can act with full privileges and impersonate other agents.',
+    recommendation: 'Set up MCP proxy (tracks identity). Add principal binding. Enable strict identity mode.',
   };
 }

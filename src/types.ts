@@ -48,6 +48,9 @@ export interface AgentTrustMapConfig {
   groups?: Record<string, { members: string[]; rules: unknown[] }>;
   relationships?: Array<{ source: string; target: string; type: string; trustLevel?: string }>;
   delegations?: Array<{ chain: string[]; effectiveTools?: string[] }>;
+  maxChainDepth?: number;
+  maxFanOut?: number;
+  scopeBoundaries?: unknown;
 }
 
 export interface PolicySet {
@@ -146,4 +149,41 @@ export interface ScanResult {
   hasRateLimitFlag: boolean;
   hasAiJudgeFlag: boolean;
   hasNoInputGuardFlag: boolean;
+
+  // ASI03: Principal binding
+  hasPrincipalBinding: boolean;
+  hasStrictIdentityMode: boolean;
+
+  // ASI04: Tool allowlist
+  hasDenyUndeclaredDefault: boolean;
+  hasToolAllowlist: boolean;
+
+  // ASI05: Human approval for code exec
+  hasReviewDecision: boolean;
+  hasCodeExecRestriction: boolean;
+
+  // ASI06: Response/memory scanning
+  hasResponseScanning: boolean;
+  hasMemoryValidation: boolean;
+
+  // ASI07: Receipt chain
+  maxChainDepth: number | null;
+  maxFanOut: number | null;
+  hasReceiptChain: boolean;
+
+  // ASI08: Fail-closed
+  hasFailClosed: boolean;
+  hasTimeout: boolean;
+  hasCircuitBreaker: boolean;
+  hasSpikeDetection: boolean;
+
+  // ASI09: Approval routing
+  hasApprovalRouting: boolean;
+  hasRawIntentDisplay: boolean;
+
+  // ASI10: Behavioral detection
+  hasBehavioralBaseline: boolean;
+  hasRemoteKillSwitch: boolean;
+  hasAutoShutdown: boolean;
+  hasScopeBoundaries: boolean;
 }

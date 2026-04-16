@@ -115,6 +115,50 @@ export function scanProject(root: string): ScanResult {
   const pkg = packageJson?.content ?? null;
   const allDeps = { ...pkg?.dependencies, ...pkg?.devDependencies };
 
+  // ── ASI03: Principal binding (API key per agent identity) ──
+  const hasPrincipalBinding = !!tm?.groups && Object.values(tm.groups).some((g: any) =>
+    g.members?.length > 0 && g.rules?.length > 0
+  );
+  const hasStrictIdentityMode = allProxyArgs.some((a) => a === '--strict-identity');
+
+  // ── ASI04: Tool allowlist / deny-undeclared ──
+  const hasDenyUndeclaredDefault = denyRules.some((r) =>
+    r.toolPattern === '*' && r.effect === 'DENY' && !r.commandConstraints && !r.filenameConstraints && !r.urlConstraints
+  );
+  const hasToolAllowlist = allowRules.some((r) => r.toolPattern !== '*');
+
+  // ── ASI05: Human approval (REVIEW decision) for code exec ──
+  const hasReviewDecision = rules.some((r: any) => r.effect === 'REVIEW' || r.decision === 'REVIEW');
+  const codeExecToolPatterns = ['shell_exec', 'run_python', 'execute_shell', 'eval_js', 'exec'];
+  const hasCodeExecRestriction = denyRules.some((r) =>
+    codeExecToolPatterns.some((t) => r.toolPattern?.includes(t))
+  );
+
+  // ── ASI06: Memory/response scanning ──
+  const hasResponseScanning = allProxyArgs.some((a) => a === '--response-scan' || a === '--scan-responses' || a === '--output-guard');
+  const hasMemoryValidation = allProxyArgs.some((a) => a === '--memory-guard' || a === '--context-guard');
+
+  // ── ASI07: Receipt chain / delegation depth ──
+  const maxChainDepth = tm?.maxChainDepth ?? null;
+  const maxFanOut = tm?.maxFanOut ?? null;
+  const hasReceiptChain = allProxyArgs.some((a) => a === '--receipt-chain' || a === '--audit-chain');
+
+  // ── ASI08: Fail-closed / circuit breaker ──
+  const hasFailClosed = allProxyArgs.some((a) => a === '--fail-closed' || a === '--fail-deny');
+  const hasTimeout = allProxyArgs.some((a) => a.includes('--timeout') || a.includes('--tool-timeout'));
+  const hasCircuitBreaker = allProxyArgs.some((a) => a.includes('circuit-breaker') || a.includes('--cb'));
+  const hasSpikeDetection = allProxyArgs.some((a) => a.includes('spike') || a.includes('sentinel'));
+
+  // ── ASI09: Raw intent routing / approval config ──
+  const hasApprovalRouting = allProxyArgs.some((a) => a === '--approval-routing' || a === '--human-approval');
+  const hasRawIntentDisplay = allProxyArgs.some((a) => a === '--raw-intent' || a === '--show-raw');
+
+  // ── ASI10: CUSUM / behavioral baselines ──
+  const hasBehavioralBaseline = allProxyArgs.some((a) => a.includes('baseline') || a.includes('cusum') || a.includes('drift'));
+  const hasRemoteKillSwitch = allProxyArgs.some((a) => a === '--kill-switch' || a === '--remote-kill');
+  const hasAutoShutdown = allProxyArgs.some((a) => a.includes('auto-shutdown') || a.includes('anomaly-shutdown'));
+  const hasScopeBoundaries = !!tm?.scopeBoundaries || denyRules.some((r: any) => r.scopeLimit);
+
   return {
     projectRoot: root,
     aiTools,
@@ -160,5 +204,42 @@ export function scanProject(root: string): ScanResult {
     hasRateLimitFlag: allProxyArgs.some((a) => a.includes('rate-limit')),
     hasAiJudgeFlag: allProxyArgs.some((a) => a === '--ai-judge'),
     hasNoInputGuardFlag: allProxyArgs.some((a) => a === '--no-input-guard'),
+
+    // ASI03: Principal binding
+    hasPrincipalBinding,
+    hasStrictIdentityMode,
+
+    // ASI04: Tool allowlist
+    hasDenyUndeclaredDefault,
+    hasToolAllowlist,
+
+    // ASI05: Human approval for code exec
+    hasReviewDecision,
+    hasCodeExecRestriction,
+
+    // ASI06: Response/memory scanning
+    hasResponseScanning,
+    hasMemoryValidation,
+
+    // ASI07: Receipt chain
+    maxChainDepth,
+    maxFanOut,
+    hasReceiptChain,
+
+    // ASI08: Fail-closed
+    hasFailClosed,
+    hasTimeout,
+    hasCircuitBreaker,
+    hasSpikeDetection,
+
+    // ASI09: Approval routing
+    hasApprovalRouting,
+    hasRawIntentDisplay,
+
+    // ASI10: Behavioral detection
+    hasBehavioralBaseline,
+    hasRemoteKillSwitch,
+    hasAutoShutdown,
+    hasScopeBoundaries,
   };
 }
