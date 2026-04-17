@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import type { CheckResult, CheckStatus, Evidence, ScanResult } from './types.js';
+import type { CheckResult, CheckStatus, Evidence, AuditData } from './types.js';
 
 const STATUS_ICON: Record<CheckStatus, string> = {
   PROTECTED: chalk.green('\u2705'),
@@ -30,38 +30,21 @@ export function printHeader(): void {
   console.log('');
 }
 
-export function printScanSummary(scan: ScanResult): void {
-  console.log(chalk.dim('  Scanned: ') + scan.projectRoot);
-
-  if (scan.aiTools.length > 0) {
-    console.log(chalk.dim('  AI Tools: ') + scan.aiTools.join(', '));
-  }
-
-  const found: string[] = [];
-  if (scan.mcpConfig) found.push('.mcp.json');
-  if (scan.policyConfig) found.push(scan.policyConfig.path.split(/[/\\]/).pop()!);
-  if (scan.claudeSettings) found.push('.claude/settings.json');
-  if (scan.geminiSettings) found.push('.gemini/settings.json');
-  if (scan.cursorConfig) found.push('.cursor/mcp.json');
-  if (scan.openclawConfig) found.push('.openclaw/');
-  if (scan.hasGuardHook || scan.hasAuditHook) found.push('hooks/');
-  if (scan.hasDockerfile) found.push('Dockerfile');
-  if (scan.hasLockFile) found.push('lock file');
-  if (scan.hasDependabot) found.push('dependabot');
-
-  if (found.length > 0) {
-    console.log(chalk.dim('  Configs: ') + found.join(', '));
+export function printLogSummary(data: AuditData): void {
+  if (data.sources.length > 0) {
+    console.log(chalk.dim('  AI Tools: ') + data.sources.join(', '));
   } else {
-    console.log(chalk.dim('  Configs: ') + chalk.red('No security configurations detected'));
+    console.log(chalk.dim('  AI Tools: ') + chalk.red('No AI tool logs found'));
   }
 
-  console.log(chalk.dim('  Servers: ') +
-    (scan.servers.length > 0
-      ? `${scan.servers.length} total` +
-        (scan.proxiedCount > 0 ? chalk.green(`, ${scan.proxiedCount} proxied`) : '') +
-        (scan.unprotectedCount > 0 ? chalk.red(`, ${scan.unprotectedCount} unprotected`) : '') +
-        (scan.dangerousUnprotected.length > 0 ? chalk.red.bold(` (${scan.dangerousUnprotected.length} dangerous!)`) : '')
-      : chalk.dim('none')));
+  console.log(chalk.dim('  Sessions: ') + `${data.sessions.length} total, ${data.totalToolCalls} tool calls`);
+
+  if (data.timeRange) {
+    const from = new Date(data.timeRange.from).toLocaleDateString();
+    const to = new Date(data.timeRange.to).toLocaleDateString();
+    console.log(chalk.dim('  Period: ') + `${from} \u2014 ${to}`);
+  }
+
   console.log('');
 }
 
@@ -91,10 +74,7 @@ export function printCompactReport(results: CheckResult[]): void {
 export function printScore(results: CheckResult[]): void {
   const { intScore, fixCount } = calcScore(results);
 
-  const barLen = 30;
-  const filled = Math.round((intScore / 10) * barLen);
-  const color = intScore >= 7 ? chalk.green : intScore >= 4 ? chalk.yellow : chalk.red;
-  console.log(`  Security Score: ${color.bold(`${intScore}/10`)}`);
+  console.log(`  Security Score: ${(intScore >= 7 ? chalk.green : intScore >= 4 ? chalk.yellow : chalk.red).bold(`${intScore}/10`)}`);
   console.log('');
 
   if (fixCount > 0) {

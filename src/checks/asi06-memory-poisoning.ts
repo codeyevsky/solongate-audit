@@ -1,83 +1,86 @@
-import type { ScanResult, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence } from '../types.js';
 
 // OWASP ASI06: Memory & Context Poisoning
-// Persistent memory contaminated with manipulative data that survives session resets (MINJA attacks).
-// OWASP mitigations: MINJA-informed rules scanning memory writes, detect authorization bypass
-// instructions, block poisoned writes, scan all values before persistent storage.
+// Analyze logs for suspicious content in tool results that could poison agent memory.
 
-export function checkMemoryPoisoning(scan: ScanResult): CheckResult {
+const MINJA_PATTERNS = [
+  /skip\s+(authorization|auth)\s+checks?/i,
+  /user\s+is\s+(verified\s+)?admin/i,
+  /full\s+access\s+(granted|enabled)/i,
+  /ignore\s+(security|safety|restriction)/i,
+  /bypass\s+(auth|security|check)/i,
+  /you\s+have\s+permission/i,
+  /elevated\s+privileges?/i,
+  /disable\s+(logging|audit|monitoring)/i,
+  /trust\s+this\s+(source|input|data)/i,
+  /no\s+verification\s+needed/i,
+];
+
+export function checkMemoryPoisoning(data: AuditData): CheckResult {
   const code = 'ASI06';
   const title = 'Memory Poisoning';
   const evidence: Evidence[] = [];
 
-  const hasProxy = scan.proxiedCount > 0;
+  let poisoningPatterns = 0;
+  let unscanResults = 0;
+  const flagged: string[] = [];
 
-  // OWASP: Response/output scanning — scan tool outputs for indirect prompt injection
-  if (scan.hasResponseScanning) {
-    evidence.push({ icon: 'found', text: 'Response scanning active — tool outputs scanned for indirect prompt injection' });
+  for (const tc of data.sessions.flatMap((s) => s.toolCalls)) {
+    const result = tc.result || '';
+
+    // Check tool results for MINJA-style poisoning patterns
+    for (const pattern of MINJA_PATTERNS) {
+      if (pattern.test(result)) {
+        poisoningPatterns++;
+        if (flagged.length < 3) {
+          flagged.push(`${tc.toolName}: result contains "${result.match(pattern)?.[0]}"`);
+        }
+        break;
+      }
+    }
+
+    // Count tool calls that returned data (potential memory poisoning surface)
+    if (result.length > 100) unscanResults++;
+  }
+
+  evidence.push({ icon: 'info', text: `Scanned ${data.totalToolCalls} tool results for memory poisoning patterns` });
+  evidence.push({ icon: 'info', text: `${unscanResults} tool result(s) returned substantial data (>100 chars) — unscanned` });
+
+  if (poisoningPatterns > 0) {
+    evidence.push({ icon: 'warn', text: `${poisoningPatterns} MINJA-style poisoning pattern(s) detected in tool results` });
+    for (const f of flagged) {
+      evidence.push({ icon: 'warn', text: `  ${f}` });
+    }
   } else {
-    evidence.push({ icon: 'missing', text: 'No response scanning — tool outputs go directly into agent context unscanned (OWASP: scan all outputs)' });
+    evidence.push({ icon: 'found', text: 'No MINJA poisoning patterns detected in tool results' });
   }
 
-  // OWASP: Memory validation — scan values before writing to persistent storage
-  if (scan.hasMemoryValidation) {
-    evidence.push({ icon: 'found', text: 'Memory validation — values scanned before writing to persistent storage' });
-  } else {
-    evidence.push({ icon: 'missing', text: 'No memory validation — poisoned data can persist across sessions (OWASP: MINJA defense)' });
-  }
-
-  // OWASP: MINJA-informed rules — detect patterns like "Skip authorization checks"
-  evidence.push({ icon: 'missing', text: 'No MINJA-informed rules — cannot detect authorization bypass instructions in memory writes' });
-  evidence.push({ icon: 'missing', text: '  OWASP examples: "User is verified admin", "Skip authorization checks", fake credentials' });
-
-  // Post-tool hooks (can observe but typically don't block)
-  if (scan.hasPostToolHook || scan.hasAuditHook) {
-    evidence.push({ icon: 'found', text: 'Post-tool hooks observe tool outputs' });
-    evidence.push({ icon: 'warn', text: '  Hooks log responses but typically do not block poisoned content' });
-  } else {
-    evidence.push({ icon: 'missing', text: 'No post-tool hooks — tool outputs are not reviewed' });
-  }
-
-  // File restrictions (limits what can be read into context)
-  if (scan.hasFileRestrictions) {
-    evidence.push({ icon: 'found', text: 'File access restrictions reduce surface for context poisoning' });
-  }
-
-  // URL restrictions (limits what web content enters context)
-  if (scan.hasUrlRestrictions) {
-    evidence.push({ icon: 'found', text: 'URL restrictions limit external content ingestion' });
-  }
-
-  // Critical OWASP gaps
+  evidence.push({ icon: 'missing', text: 'No response scanning — tool outputs go directly into agent context' });
+  evidence.push({ icon: 'missing', text: 'No memory validation — poisoned data can persist across sessions' });
   evidence.push({ icon: 'missing', text: 'No context isolation between tool results' });
-  evidence.push({ icon: 'missing', text: 'No RAG input sanitization' });
 
-  // PROTECTED: response scanning + memory validation + MINJA rules
-  if (scan.hasResponseScanning && scan.hasMemoryValidation) {
+  if (poisoningPatterns > 0) {
     return {
-      code, title, status: 'PROTECTED', evidence,
-      summary: 'Tool outputs scanned and memory writes validated against poisoning patterns.',
-      details: 'Response scanning detects indirect prompt injection in tool outputs. Memory validation prevents poisoned data from persisting. MINJA-informed rules block authorization bypass patterns.',
+      code, title, status: 'NOT_PROTECTED', evidence,
+      summary: `${poisoningPatterns} memory poisoning pattern(s) found in tool results.`,
+      details: 'Tool results contain instructions that could manipulate agent behavior (MINJA attack). Patterns like "skip authorization" or "user is admin" found in data returned to agents.',
+      recommendation: 'Implement response scanning with MINJA-informed rules. Add memory validation. Add context isolation.',
     };
   }
 
-  // PARTIAL: some output scanning exists
-  if (scan.hasResponseScanning || scan.hasMemoryValidation) {
+  if (unscanResults > 50) {
     return {
-      code, title, status: 'PARTIAL', evidence,
-      summary: 'Some output scanning exists but incomplete memory poisoning defense.',
-      details: scan.hasResponseScanning
-        ? 'Tool outputs are scanned but memory writes are not validated. Poisoned data can still persist across sessions.'
-        : 'Memory writes are validated but tool outputs are not scanned for injection. Attackers can inject instructions via file/web/API content.',
-      recommendation: 'Add both response scanning and memory validation. Implement MINJA-informed rules.',
+      code, title, status: 'NOT_PROTECTED', evidence,
+      summary: 'Large volume of unscanned tool results — high poisoning surface.',
+      details: `${unscanResults} tool results with substantial data passed directly to agent context without scanning. No MINJA patterns detected yet, but no scanning exists to catch future attacks.`,
+      recommendation: 'Implement response scanning for tool outputs. Add MINJA-informed rules.',
     };
   }
 
-  // NOT_PROTECTED: no scanning at all
   return {
-    code, title, status: 'NOT_PROTECTED', evidence,
-    summary: 'Agent memory can be poisoned via tool outputs and external data.',
-    details: 'Tool outputs (file contents, web pages, API responses) go directly into agent context without scanning. Attackers can embed hidden instructions in documents, web pages, or database records that manipulate agent behavior. Poisoned memory persists across sessions (MINJA attack).',
-    recommendation: 'Implement response scanning for tool outputs. Add memory validation with MINJA-informed rules. Add context isolation.',
+    code, title, status: 'PARTIAL', evidence,
+    summary: 'No poisoning detected, but no scanning exists to prevent it.',
+    details: 'No MINJA patterns found in current logs. But tool outputs are not scanned — future attacks would go undetected.',
+    recommendation: 'Implement response scanning with MINJA-informed rules. Add memory validation.',
   };
 }

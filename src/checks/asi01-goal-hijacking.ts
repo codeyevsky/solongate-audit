@@ -1,76 +1,100 @@
-import type { ScanResult, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence } from '../types.js';
 
-// OWASP ASI01: Agent Goal Hijack
-// Attackers manipulate agent objectives via prompt injection, deceptive tool outputs, poisoned data.
-// PROTECTED = semantic-level detection + input validation + policy enforcement
-// PARTIAL = basic pattern-based prompt injection detection (catches common attacks, not novel ones)
-// NOT_PROTECTED = no input validation at all
+// OWASP ASI01: Agent Goal Hijacking
+// Analyze logs for signs of prompt injection in tool arguments and results.
 
-export function checkGoalHijacking(scan: ScanResult): CheckResult {
+const INJECTION_PATTERNS = [
+  /ignore\s+(previous|above|all)\s+(instructions|rules)/i,
+  /you\s+are\s+now\s+(a|an|the)/i,
+  /\<\/?system\s*>/i,
+  /\[\s*INST\s*\]/i,
+  /act\s+as\s+(a|an|if)\s+you/i,
+  /forget\s+(everything|all|your)\s+(instructions|rules|context)/i,
+  /override\s+(your|the|all)\s+(instructions|rules|safety)/i,
+  /new\s+instructions?\s*:/i,
+  /do\s+not\s+follow\s+(any|your|the)\s+(previous|original)/i,
+  /disregard\s+(all|any|your)\s+(previous|prior|original)/i,
+];
+
+export function checkGoalHijacking(data: AuditData): CheckResult {
   const code = 'ASI01';
   const title = 'Goal Hijacking';
   const evidence: Evidence[] = [];
 
-  const hasProxy = scan.proxiedCount > 0;
-  const hasInputGuard = hasProxy && !scan.hasNoInputGuardFlag;
-  const hasAiJudge = scan.hasAiJudgeFlag;
-  const hasPolicy = scan.denyRules.length > 0;
+  let injectionAttempts = 0;
+  const examples: string[] = [];
 
-  if (hasProxy) {
-    evidence.push({ icon: 'found', text: `MCP proxy on ${scan.proxiedCount} server(s) — input validation layer` });
+  for (const tc of data.sessions.flatMap((s) => s.toolCalls)) {
+    const argStr = JSON.stringify(tc.arguments);
+    const resultStr = tc.result || '';
+
+    // Check tool arguments for injection patterns
+    for (const pattern of INJECTION_PATTERNS) {
+      if (pattern.test(argStr)) {
+        injectionAttempts++;
+        if (examples.length < 3) {
+          examples.push(`${tc.toolName}: arg matches ${pattern.source.slice(0, 30)}`);
+        }
+        break;
+      }
+    }
+
+    // Check tool results for injection (indirect prompt injection)
+    for (const pattern of INJECTION_PATTERNS) {
+      if (pattern.test(resultStr)) {
+        injectionAttempts++;
+        if (examples.length < 3) {
+          examples.push(`${tc.toolName}: result contains injection pattern`);
+        }
+        break;
+      }
+    }
+  }
+
+  evidence.push({ icon: 'info', text: `Scanned ${data.totalToolCalls} tool calls for prompt injection patterns` });
+
+  if (injectionAttempts === 0) {
+    evidence.push({ icon: 'found', text: 'No prompt injection patterns detected in tool calls or results' });
   } else {
-    evidence.push({ icon: 'missing', text: 'No MCP proxy — tool call arguments are not validated' });
+    evidence.push({ icon: 'warn', text: `${injectionAttempts} potential prompt injection pattern(s) detected` });
+    for (const ex of examples) {
+      evidence.push({ icon: 'warn', text: `  ${ex}` });
+    }
   }
 
-  if (hasInputGuard) {
-    evidence.push({ icon: 'found', text: 'Input guard active — catches common prompt injection patterns' });
-    evidence.push({ icon: 'info', text: '  Detects: delimiter injection, role hijacking, jailbreak keywords' });
-    evidence.push({ icon: 'warn', text: '  Limitation: pattern-based only — novel/obfuscated attacks can bypass' });
-  } else if (scan.hasNoInputGuardFlag) {
-    evidence.push({ icon: 'warn', text: 'Input guard DISABLED (--no-input-guard flag)' });
+  // Check if any tool results contain encoded payloads
+  let encodedPayloads = 0;
+  for (const tc of data.sessions.flatMap((s) => s.toolCalls)) {
+    const r = tc.result || '';
+    if (/[A-Za-z0-9+/]{50,}={0,2}/.test(r) && /base64|decode|eval/i.test(r)) {
+      encodedPayloads++;
+    }
+  }
+  if (encodedPayloads > 0) {
+    evidence.push({ icon: 'warn', text: `${encodedPayloads} tool result(s) contain encoded payloads (potential obfuscated injection)` });
   }
 
-  if (hasAiJudge) {
-    evidence.push({ icon: 'found', text: 'AI Judge enabled — semantic intent analysis for novel attacks' });
-  } else {
-    evidence.push({ icon: 'missing', text: 'No semantic analysis (AI Judge) — only rule-based detection' });
-  }
-
-  if (scan.hasPreToolHook) {
-    evidence.push({ icon: 'found', text: 'Pre-tool hooks — can validate/block before tool execution' });
-  }
-
-  if (hasPolicy) {
-    evidence.push({ icon: 'found', text: `${scan.denyRules.length} DENY rule(s) limit damage even if goal is hijacked` });
-  }
-
-  if (scan.unprotectedCount > 0) {
-    evidence.push({ icon: 'warn', text: `${scan.unprotectedCount} server(s) without proxy — no input validation on those` });
-  }
-
-  // PROTECTED requires semantic analysis (AI Judge) + input guard + policy
-  // Just having input guard = PARTIAL (catches known patterns, not novel attacks)
-  if (hasInputGuard && hasAiJudge && hasPolicy) {
+  if (injectionAttempts === 0 && encodedPayloads === 0) {
     return {
       code, title, status: 'PROTECTED', evidence,
-      summary: 'Multi-layer prompt injection defense with semantic analysis.',
-      details: 'Input guard catches known patterns, AI Judge analyzes intent semantically, and policy rules limit blast radius. Novel attacks are detected at the semantic level.',
+      summary: 'No prompt injection patterns found in agent logs.',
+      details: `Scanned ${data.totalToolCalls} tool calls. No known injection patterns (delimiter injection, role hijacking, encoded payloads) detected in arguments or results.`,
     };
   }
 
-  if (hasInputGuard || scan.hasPreToolHook || scan.hasGuardHook) {
+  if (injectionAttempts <= 3) {
     return {
       code, title, status: 'PARTIAL', evidence,
-      summary: 'Prompt injection detection catches common attacks, not novel ones.',
-      details: 'Rule-based prompt injection detection catches known attack patterns (delimiter injection, role hijacking, encoding tricks). But novel/obfuscated attacks can bypass pattern matching. No semantic-level goal verification.',
-      recommendation: 'Enable AI Judge (--ai-judge) for semantic-level prompt injection analysis.',
+      summary: `${injectionAttempts} potential injection pattern(s) detected.`,
+      details: 'Low-frequency injection patterns found. Could be false positives or minor attempts. Review the flagged calls.',
+      recommendation: 'Enable input guard on MCP proxy to block injection patterns before tool execution.',
     };
   }
 
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
-    summary: 'No prompt injection defense. Agent goals can be hijacked via malicious input.',
-    details: 'Attackers can override agent goals through prompt injection in documents, web pages, emails, or tool outputs. No input validation or intent verification exists.',
-    recommendation: 'Add MCP proxy with input guard for prompt injection detection.',
+    summary: `${injectionAttempts} prompt injection patterns detected in logs.`,
+    details: 'Multiple injection patterns found in tool arguments or results. Agents may have processed malicious instructions from external content.',
+    recommendation: 'Enable input guard + AI Judge for semantic prompt injection analysis.',
   };
 }

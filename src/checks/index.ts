@@ -1,4 +1,4 @@
-import type { ScanResult, CheckResult } from '../types.js';
+import type { AuditData, CheckResult } from '../types.js';
 import { checkGoalHijacking } from './asi01-goal-hijacking.js';
 import { checkToolMisuse } from './asi02-tool-misuse.js';
 import { checkIdentityAbuse } from './asi03-identity-abuse.js';
@@ -23,6 +23,6 @@ const ALL_CHECKS = [
   checkRogueAgents,
 ];
 
-export function runAllChecks(scan: ScanResult): CheckResult[] {
-  return ALL_CHECKS.map((check) => check(scan));
+export function runAllChecks(data: AuditData): CheckResult[] {
+  return ALL_CHECKS.map((check) => check(data));
 }

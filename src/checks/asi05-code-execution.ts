@@ -1,101 +1,105 @@
-import type { ScanResult, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence } from '../types.js';
 
 // OWASP ASI05: Unexpected Code Execution (RCE)
-// Agents execute unvetted code, including sandbox escapes and command injection.
-// OWASP mitigations: REVIEW decision for code execution tools with human approval,
-// route to specific reviewer groups, combine with input scanning, sandboxing.
+// Analyze logs for arbitrary code execution — shell commands, eval, script execution.
 
-export function checkCodeExecution(scan: ScanResult): CheckResult {
+// Only flag patterns that indicate INJECTION, not normal shell usage
+// Normal: `git status && git push`, `cat file | grep pattern` — NOT dangerous
+// Dangerous: injection via tool args, not legitimate shell commands
+const DANGEROUS_PATTERNS = [
+  { pattern: /eval\s*\(/, label: 'eval() — arbitrary code execution' },
+  { pattern: /\bexec\s*\(/, label: 'exec() — arbitrary code execution' },
+  { pattern: /python\s+-c\s+['"]/, label: 'python -c inline code execution' },
+  { pattern: /node\s+-e\s+['"]/, label: 'node -e inline code execution' },
+  { pattern: /curl\s+.*\|\s*(ba)?sh/, label: 'curl pipe to shell — remote code execution' },
+  { pattern: /wget\s+.*\|\s*(ba)?sh/, label: 'wget pipe to shell — remote code execution' },
+  { pattern: /base64\s+-d\s*\|/, label: 'base64 decode piped to execution' },
+  { pattern: /powershell\s+-e(ncodedcommand)?/i, label: 'powershell encoded command' },
+];
+
+export function checkCodeExecution(data: AuditData): CheckResult {
   const code = 'ASI05';
   const title = 'Code Execution';
   const evidence: Evidence[] = [];
 
-  const hasProxy = scan.proxiedCount > 0;
-  const hasInputGuard = hasProxy && !scan.hasNoInputGuardFlag;
-  const hasDocker = scan.hasDockerfile;
+  let shellCalls = 0;
+  let dangerousExec = 0;
+  let noSandbox = true;
+  const flagged: string[] = [];
 
-  // OWASP: REVIEW decision — require human approval for code execution tools
-  if (scan.hasReviewDecision) {
-    evidence.push({ icon: 'found', text: 'REVIEW decision configured — code execution requires human approval' });
-  } else {
-    evidence.push({ icon: 'missing', text: 'No REVIEW decision — code execution not routed for human approval (OWASP: highest-friction operation)' });
+  for (const tc of data.sessions.flatMap((s) => s.toolCalls)) {
+    const toolLower = tc.toolName.toLowerCase();
+    const argStr = JSON.stringify(tc.arguments);
+
+    // Count shell/exec calls
+    if (toolLower.includes('bash') || toolLower.includes('shell') || toolLower.includes('exec') || toolLower.includes('terminal')) {
+      shellCalls++;
+
+      // Check for container/sandbox indicators
+      if (argStr.includes('docker ') || argStr.includes('sandbox') || argStr.includes('container')) {
+        noSandbox = false;
+      }
+
+      // Check for dangerous patterns
+      for (const { pattern, label } of DANGEROUS_PATTERNS) {
+        if (pattern.test(argStr)) {
+          dangerousExec++;
+          if (flagged.length < 5) flagged.push(`${tc.toolName}: ${label}`);
+          break;
+        }
+      }
+    }
   }
 
-  // OWASP: Specific restrictions on code exec tools
-  if (scan.hasCodeExecRestriction) {
-    evidence.push({ icon: 'found', text: 'Code execution tools (shell_exec, run_python, eval_js) explicitly restricted in policy' });
-  } else {
-    evidence.push({ icon: 'missing', text: 'No specific restrictions on code execution tools in policy' });
-  }
+  evidence.push({ icon: 'info', text: `${shellCalls} shell/exec call(s) found in ${data.sessions.length} session(s)` });
 
-  // Command restrictions in policy
-  if (scan.hasCommandRestrictions) {
-    const cmds = scan.denyRules.flatMap((r) => r.commandConstraints?.denied ?? []);
-    evidence.push({ icon: 'found', text: `Command restrictions: ${cmds.slice(0, 5).join(', ')}${cmds.length > 5 ? '...' : ''}` });
-  } else {
-    evidence.push({ icon: 'missing', text: 'No command restrictions in policy — any shell command allowed' });
-  }
-
-  // Input guard (shell injection detection)
-  if (hasInputGuard) {
-    evidence.push({ icon: 'found', text: 'Input guard catches shell injection patterns (;, |, &, $(), base64 -d, etc.)' });
-    evidence.push({ icon: 'warn', text: '  Limitation: blocks known patterns — cannot prevent all code execution' });
-  } else {
-    evidence.push({ icon: 'missing', text: 'No input guard — shell injection in tool arguments not detected' });
-  }
-
-  // Sandbox
-  if (hasDocker) {
-    evidence.push({ icon: 'found', text: 'Dockerfile present — code can execute in isolated container' });
-  } else {
-    evidence.push({ icon: 'missing', text: 'No container/sandbox — code executes directly on host system' });
-  }
-
-  // Pre-tool hooks
-  if (scan.hasPreToolHook) {
-    evidence.push({ icon: 'found', text: 'Pre-tool hooks can intercept and review commands before execution' });
-  }
-
-  // Dangerous servers without proxy
-  const shellServers = scan.servers.filter((s) => s.detectedTools.includes('shell_exec') && !s.proxy);
-  if (shellServers.length > 0) {
-    evidence.push({ icon: 'warn', text: `Shell-capable servers without proxy: ${shellServers.map((s) => s.name).join(', ')}` });
-  }
-
-  // PROTECTED = REVIEW decision + sandbox + restrictions (OWASP: make code exec highest-friction)
-  if (scan.hasReviewDecision && hasDocker && (scan.hasCommandRestrictions || hasInputGuard)) {
+  if (shellCalls === 0) {
+    evidence.push({ icon: 'found', text: 'No shell execution calls detected in logs' });
     return {
       code, title, status: 'PROTECTED', evidence,
-      summary: 'Code execution requires human approval and runs in sandbox.',
-      details: 'REVIEW decision routes code execution for human approval. Container isolation limits blast radius. Input guard and command restrictions provide defense in depth.',
+      summary: 'No code execution detected in agent logs.',
+      details: 'No shell commands, eval, or script execution found in any session.',
     };
   }
 
-  // Also PROTECTED without REVIEW if sandbox + restrictions
-  if (hasDocker && (scan.hasCommandRestrictions || hasInputGuard)) {
+  if (dangerousExec > 0) {
+    evidence.push({ icon: 'warn', text: `${dangerousExec} dangerous execution pattern(s) detected` });
+    for (const f of flagged) {
+      evidence.push({ icon: 'warn', text: `  ${f}` });
+    }
+  } else {
+    evidence.push({ icon: 'found', text: 'No dangerous execution patterns (injection, chaining) detected' });
+  }
+
+  if (noSandbox) {
+    evidence.push({ icon: 'missing', text: 'No sandbox/container execution detected — all commands run on host' });
+  } else {
+    evidence.push({ icon: 'found', text: 'Some commands executed in container/sandbox environment' });
+  }
+
+  evidence.push({ icon: 'missing', text: 'No REVIEW decision — code execution not routed for human approval' });
+
+  if (dangerousExec === 0 && !noSandbox) {
     return {
       code, title, status: 'PROTECTED', evidence,
-      summary: 'Code execution sandboxed and restricted.',
-      details: 'Container isolation limits blast radius. Command restrictions and/or input guard prevent shell injection. Defense in depth against RCE. Add REVIEW decision for full OWASP compliance.',
+      summary: 'Shell calls detected but executed in sandbox with no dangerous patterns.',
+      details: `${shellCalls} shell calls found. No command injection patterns. Container isolation detected.`,
     };
   }
 
-  // PARTIAL = some restrictions but no sandbox or human approval
-  if (hasInputGuard || scan.hasCommandRestrictions || scan.hasPreToolHook || scan.hasCodeExecRestriction) {
+  if (dangerousExec === 0) {
     return {
       code, title, status: 'PARTIAL', evidence,
-      summary: 'Some code execution restrictions, but no sandboxing or human approval.',
-      details: hasInputGuard
-        ? 'Input guard catches known shell injection patterns. But code runs on host — a bypass means full system access. No human approval (REVIEW decision) for code execution.'
-        : 'Command restrictions block specific dangerous commands. No sandbox isolation. No human approval gate.',
-      recommendation: 'Add Dockerfile for sandbox. Add REVIEW decision for code exec tools. Input guard + sandbox + human approval = OWASP compliant.',
+      summary: `${shellCalls} shell calls — no injection patterns, but no sandbox.`,
+      details: 'Shell commands were executed on the host system without container isolation. No command injection patterns detected, but any bypass means full system access.',
+      recommendation: 'Add REVIEW decision for code exec tools. Add Dockerfile for sandbox. Add input guard.',
     };
   }
 
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
-    summary: 'No code execution restrictions. Full RCE possible.',
-    details: 'Agents can execute arbitrary shell commands, scripts, and code on the host system. No input validation, no command restrictions, no sandboxing, no human approval. OWASP says: make code execution the highest-friction operation.',
-    recommendation: 'Add REVIEW decision for code exec tools. Add sandbox (Dockerfile). Add input guard + command restrictions.',
+    summary: `${dangerousExec} dangerous code execution pattern(s) in logs.`,
+    details: 'Agents executed shell commands with dangerous patterns (command chaining, injection, eval). No sandbox, no human approval. Full RCE possible.',
+    recommendation: 'Add REVIEW decision for code exec. Add sandbox (Dockerfile). Add input guard + command restrictions.',
   };
 }

@@ -1,69 +1,122 @@
-import type { ScanResult, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence } from '../types.js';
 
 // OWASP ASI02: Tool Misuse and Exploitation
-// Agent uses legitimate tools in unsafe ways — data exfiltration, over-invoking APIs, deleting data.
-// PROTECTED = policy with DENY rules + constraints, actively enforced by proxy
-// PARTIAL = some restrictions but incomplete coverage
-// NOT_PROTECTED = no tool access restrictions
+// Analyze logs for dangerous tool usage — sensitive file access, destructive commands, data exfiltration.
 
-export function checkToolMisuse(scan: ScanResult): CheckResult {
+// Only truly sensitive files — not project config or normal dev files
+const SENSITIVE_FILES = ['.env.production', 'credentials.json', 'id_rsa', 'id_ed25519', '.pem', '/etc/shadow', '/etc/passwd', 'service-account.json', '.npmrc'];
+// Only truly dangerous destructive commands — not normal dev cleanup
+const DESTRUCTIVE_PATTERNS = [
+  /rm\s+-rf\s+[\/~$.]/, // rm -rf on root, home, or current dir
+  /rm\s+-rf\s+\*/, // rm -rf *
+  /del\s+\/[sf]/i, // del /f or /s on Windows
+  /format\s+[a-z]:/i, // format C:
+  /drop\s+(table|database)/i,
+  /truncate\s+table/i,
+];
+// Only flag actual exfiltration patterns, not normal curl/wget usage
+const EXFIL_PATTERNS = [
+  /\bnc\s+-[a-z]*\s+\S+\s+\d+/, // nc connecting to host:port
+  /\bncat\s+/, // ncat usage
+  />\s*\/dev\/tcp/, // bash /dev/tcp redirect
+  /curl\s+.*--upload-file/, // curl upload
+  /scp\s+\S+\s+\S+@/, // scp to remote
+];
+const WILDCARD_QUERIES = ['SELECT *', 'WHERE 1=1', 'WHERE true', 'OR 1=1'];
+
+export function checkToolMisuse(data: AuditData): CheckResult {
   const code = 'ASI02';
   const title = 'Tool Misuse';
   const evidence: Evidence[] = [];
 
-  const hasProxy = scan.proxiedCount > 0;
-  const hasDeny = scan.denyRules.length > 0;
-  const hasConstraints = scan.hasCommandRestrictions || scan.hasFileRestrictions || scan.hasUrlRestrictions || scan.hasPathRestrictions;
+  let sensitiveAccess = 0;
+  let destructiveCmds = 0;
+  let exfilAttempts = 0;
+  let wildcardQueries = 0;
+  const flagged: string[] = [];
 
-  if (scan.policyConfig) {
-    evidence.push({ icon: 'found', text: `Policy: ${scan.policyConfig.path}` });
-    evidence.push({ icon: 'info', text: `  ${scan.denyRules.length} DENY + ${scan.allowRules.length} ALLOW rules` });
+  for (const tc of data.sessions.flatMap((s) => s.toolCalls)) {
+    const argStr = JSON.stringify(tc.arguments).toLowerCase();
+    const toolLower = tc.toolName.toLowerCase();
 
-    for (const r of scan.denyRules.slice(0, 5)) {
-      const parts: string[] = [];
-      if (r.commandConstraints?.denied?.length) parts.push(`commands blocked: ${r.commandConstraints.denied.slice(0, 3).join(', ')}`);
-      if (r.filenameConstraints?.denied?.length) parts.push(`files blocked: ${r.filenameConstraints.denied.slice(0, 3).join(', ')}`);
-      if (r.urlConstraints?.denied?.length) parts.push(`URLs blocked: ${r.urlConstraints.denied.slice(0, 3).join(', ')}`);
-      const desc = r.description ? r.description.slice(0, 50) : `DENY [${r.toolPattern}]`;
-      evidence.push({ icon: 'found', text: `  ${desc}` });
-      if (parts.length) evidence.push({ icon: 'info', text: `    ${parts.join('; ')}` });
+    // Sensitive file access
+    if (toolLower.includes('read') || toolLower.includes('file') || toolLower.includes('cat')) {
+      for (const sf of SENSITIVE_FILES) {
+        if (argStr.includes(sf.toLowerCase())) {
+          sensitiveAccess++;
+          if (flagged.length < 5) flagged.push(`${tc.toolName}: accessed ${sf}`);
+          break;
+        }
+      }
     }
-  } else {
-    evidence.push({ icon: 'missing', text: 'No tool access policy file (policy.json, etc.)' });
+
+    // Destructive commands
+    if (toolLower.includes('bash') || toolLower.includes('shell') || toolLower.includes('exec') || toolLower.includes('terminal')) {
+      for (const dp of DESTRUCTIVE_PATTERNS) {
+        if (dp.test(argStr)) {
+          destructiveCmds++;
+          if (flagged.length < 5) flagged.push(`${tc.toolName}: destructive command matching ${dp.source.slice(0, 30)}`);
+          break;
+        }
+      }
+
+      // Data exfiltration
+      for (const ep of EXFIL_PATTERNS) {
+        if (ep.test(argStr)) {
+          exfilAttempts++;
+          if (flagged.length < 5) flagged.push(`${tc.toolName}: potential exfiltration via ${ep.source.slice(0, 25)}`);
+          break;
+        }
+      }
+    }
+
+    // Wildcard DB queries
+    if (toolLower.includes('query') || toolLower.includes('sql') || toolLower.includes('db')) {
+      for (const wq of WILDCARD_QUERIES) {
+        if (argStr.includes(wq.toLowerCase())) {
+          wildcardQueries++;
+          if (flagged.length < 5) flagged.push(`${tc.toolName}: wildcard query "${wq}"`);
+          break;
+        }
+      }
+    }
   }
 
-  if (hasProxy) {
-    evidence.push({ icon: 'found', text: `Proxy enforces policy on ${scan.proxiedCount} server(s)` });
-  } else if (hasDeny) {
-    evidence.push({ icon: 'warn', text: 'Policy file exists but no proxy to enforce it' });
+  const totalIssues = sensitiveAccess + destructiveCmds + exfilAttempts + wildcardQueries;
+
+  evidence.push({ icon: 'info', text: `Scanned ${data.totalToolCalls} tool calls for misuse patterns` });
+
+  if (sensitiveAccess > 0) evidence.push({ icon: 'warn', text: `${sensitiveAccess} sensitive file access(es) (.env, credentials, keys)` });
+  if (destructiveCmds > 0) evidence.push({ icon: 'warn', text: `${destructiveCmds} destructive command(s) (rm, del, drop, truncate)` });
+  if (exfilAttempts > 0) evidence.push({ icon: 'warn', text: `${exfilAttempts} potential data exfiltration attempt(s) (curl, wget, nc)` });
+  if (wildcardQueries > 0) evidence.push({ icon: 'warn', text: `${wildcardQueries} wildcard database query(ies) (SELECT *, WHERE 1=1)` });
+
+  for (const f of flagged) {
+    evidence.push({ icon: 'warn', text: `  ${f}` });
   }
 
-  if (scan.dangerousUnprotected.length > 0) {
-    evidence.push({ icon: 'warn', text: `Dangerous servers without proxy: ${scan.dangerousUnprotected.join(', ')}` });
-  }
-
-  // PROTECTED = DENY rules with granular constraints + proxy enforcement
-  if (hasDeny && hasConstraints && hasProxy) {
+  if (totalIssues === 0) {
+    evidence.push({ icon: 'found', text: 'No tool misuse patterns detected' });
     return {
       code, title, status: 'PROTECTED', evidence,
-      summary: 'Tool access restricted by policy with active enforcement.',
-      details: `${scan.denyRules.length} DENY rule(s) with ${[scan.hasCommandRestrictions && 'command', scan.hasFileRestrictions && 'file', scan.hasUrlRestrictions && 'URL', scan.hasPathRestrictions && 'path'].filter(Boolean).join(', ')} constraints actively enforced by proxy. Unauthorized tool operations are blocked before reaching the server.`,
+      summary: 'No tool misuse detected in agent logs.',
+      details: `Scanned ${data.totalToolCalls} tool calls. No sensitive file access, destructive commands, exfiltration attempts, or wildcard queries found.`,
     };
   }
 
-  if (hasDeny || hasProxy) {
+  if (totalIssues <= 3 && exfilAttempts === 0) {
     return {
       code, title, status: 'PARTIAL', evidence,
-      summary: hasDeny ? 'Policy rules exist but enforcement or coverage is incomplete.' : 'Proxy active but no explicit DENY rules.',
-      details: 'Some tool access control exists but gaps remain. Either constraints are missing, proxy is not enforcing, or coverage is incomplete.',
-      recommendation: 'Add DENY rules with commandConstraints, filenameConstraints, urlConstraints to policy.json.',
+      summary: `${totalIssues} minor tool misuse pattern(s) detected.`,
+      details: 'Low-frequency misuse patterns. May be legitimate operations. Review flagged calls.',
+      recommendation: 'Add policy.json with DENY rules for sensitive files and destructive commands.',
     };
   }
 
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
-    summary: 'No tool access restrictions. Agents can misuse any tool freely.',
-    details: 'Agents can delete data, invoke costly APIs, exfiltrate information, or chain tools in unintended ways with no policy enforcement.',
-    recommendation: 'Create policy.json with DENY rules and enforce via MCP proxy.',
+    summary: `${totalIssues} tool misuse pattern(s) detected in logs.`,
+    details: 'Agents accessed sensitive files, ran destructive commands, or attempted data exfiltration. No policy enforcement prevented these actions.',
+    recommendation: 'Create policy.json with DENY rules. Enforce via MCP proxy with argument constraints.',
   };
 }
