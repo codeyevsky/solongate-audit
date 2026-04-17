@@ -175,16 +175,16 @@ function collectOpenClaw(): SessionInfo[] {
             model = entry.modelId || '';
           }
 
-          // Tool use from assistant
+          // Tool use from assistant — OpenClaw uses type: "toolCall" with "arguments" (not "tool_use"/"input")
           if (entry.type === 'message' && entry.message?.role === 'assistant') {
             const content = entry.message.content;
             if (Array.isArray(content)) {
               for (const block of content) {
-                if (block.type === 'tool_use') {
+                if (block.type === 'toolCall' || block.type === 'tool_use') {
                   toolCalls.push({
                     id: block.id || '',
                     toolName: block.name || '',
-                    arguments: block.input || {},
+                    arguments: block.arguments || block.input || {},
                     timestamp: entry.timestamp,
                     source: 'openclaw',
                     sessionId,
