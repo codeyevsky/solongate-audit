@@ -1,49 +1,91 @@
 # solongate-audit
 
-Security audit CLI for AI agent projects. Checks your project against the **OWASP Agentic Top 10** and shows what's protected, what's partial, and what's exposed.
+AI agent audit log tool. Scans real session logs from **Claude Code**, **Gemini CLI**, and **OpenClaw**, then checks them against the **OWASP Agentic Top 10 (2026)**.
 
-```
+```bash
 npx solongate-audit
 ```
 
 ```
 SolonGate Security Audit — OWASP Agentic Top 10
 
-✅ ASI02 Tool Misuse         PROTECTED
-✅ ASI05 Code Execution      PROTECTED
-⚠️ ASI01 Goal Hijacking      PARTIAL
-⚠️ ASI03 Identity Abuse      PARTIAL
-❌ ASI04 Supply Chain        NOT PROTECTED
-❌ ASI06 Memory Poisoning    NOT PROTECTED
+  AI Tools: Claude Code, Gemini CLI, OpenClaw
+  Sessions: 33 total, 5104 tool calls
+  Period: 30.12.2025 — 17.04.2026
 
-Security Score: 3/10
-Fix 4 critical issues → solongate.com
+❌ ASI01 Goal Hijacking     NOT PROTECTED
+❌ ASI02 Tool Misuse        NOT PROTECTED
+⚠️ ASI03 Identity Abuse     PARTIAL
+...
+
+  Security Score: 2/10
+  Fix 8 critical issues → solongate.com
 ```
+
+## How it works
+
+1. Reads AI tool session logs from your machine (not the network)
+2. Extracts every tool call — name, arguments, result, timestamp
+3. Analyzes patterns against OWASP Agentic Top 10 (ASI01–ASI10)
+4. Reports PROTECTED / PARTIAL / NOT PROTECTED per category
 
 ## What it checks
 
-The audit scans your project directory for security configurations and maps them to the [OWASP Agentic Top 10](https://genai.owasp.org/resource/agentic-ai-threats-and-mitigations/):
+| Code | Category | What's analyzed in logs |
+|------|----------|------------------------|
+| ASI01 | **Goal Hijacking** | Prompt injection patterns in tool args & results |
+| ASI02 | **Tool Misuse** | Sensitive file access, destructive commands, data exfiltration |
+| ASI03 | **Identity Abuse** | Model identity, privilege escalation, multi-agent overlap |
+| ASI04 | **Supply Chain** | Unpinned package installs, unknown tools |
+| ASI05 | **Code Execution** | Shell injection, eval, sandbox detection |
+| ASI06 | **Memory Poisoning** | MINJA patterns in tool results, unscanned outputs |
+| ASI07 | **Inter-Agent Comms** | Multi-agent delegation, receipt chains, fan-out |
+| ASI08 | **Cascading Failures** | Error rates, burst patterns, retry storms |
+| ASI09 | **Human-Agent Trust** | Deploy/publish without approval, raw intent routing |
+| ASI10 | **Rogue Agents** | Volume spikes, scope escalation, behavioral anomalies |
 
-| Code | Category | What's checked |
-|------|----------|----------------|
-| ASI01 | **Goal Hijacking** | Prompt injection defense (input guard, AI judge) |
-| ASI02 | **Tool Misuse** | Policy rules restricting tool access (DENY rules, constraints) |
-| ASI03 | **Identity Abuse** | Agent trust maps, identity verification, delegation rules |
-| ASI04 | **Supply Chain** | Lock files, pinned versions, response scanning |
-| ASI05 | **Code Execution** | Shell/exec restrictions, command constraints |
-| ASI06 | **Memory Poisoning** | Response scanner for indirect injection in tool outputs |
-| ASI07 | **Inter-Agent Comms** | Trust relationships, delegation chains between agents |
-| ASI08 | **Cascading Failures** | Rate limiting, circuit breakers |
-| ASI09 | **Human-Agent Trust** | Audit logging, human-in-the-loop hooks |
-| ASI10 | **Rogue Agents** | Kill switch, emergency lockdown capability |
+## Default log locations
 
-## CLI flags
+These are scanned automatically — no configuration needed:
+
+| AI Tool | Log location |
+|---------|-------------|
+| Claude Code | `~/.claude/projects/<project>/<session>.jsonl` |
+| Gemini CLI | `~/.gemini/tmp/<project>/chats/session-*.json` |
+| OpenClaw | `~/.openclaw/agents/main/sessions/<session>.jsonl` |
+
+## Custom log directories
+
+Add extra directories if your logs are in a non-standard location:
 
 ```bash
-npx solongate-audit              # Compact table + score
-npx solongate-audit --detailed   # Add per-category explanations
-npx solongate-audit -d           # Same as --detailed
-npx solongate-audit --json       # Machine-readable JSON output
+# Add a custom directory
+npx solongate-audit --add-dir /path/to/logs
+
+# Add multiple
+npx solongate-audit --add-dir /home/other-user/.claude/projects
+npx solongate-audit --add-dir /var/log/ai-agents
+
+# Remove a directory
+npx solongate-audit --remove-dir /path/to/logs
+
+# List all directories (default + custom)
+npx solongate-audit --list-dirs
+
+# Auto-search system for AI tool logs
+npx solongate-audit --search
+```
+
+Custom directories are saved in `~/.solongate-audit/config.json` and persist across runs.
+
+## CLI
+
+```bash
+npx solongate-audit                     # Compact report
+npx solongate-audit --detailed          # Detailed analysis per category
+npx solongate-audit --watch             # Live monitoring (updates every 3s)
+npx solongate-audit --json              # JSON output for CI
+npx solongate-audit --help              # Show all options
 ```
 
 ## CI integration
@@ -55,39 +97,17 @@ Exit code `0` if score >= 7/10, exit code `1` otherwise.
 - run: npx solongate-audit
 ```
 
-```json
-// package.json
-{
-  "scripts": {
-    "security-audit": "solongate-audit"
-  }
-}
-```
-
-## What it scans
-
-The tool scans these files in your project directory:
-
-- `.mcp.json` / `mcp.json` — MCP server configurations
-- `policy.json` / `solongate.json` — SolonGate policy rules
-- `package.json` — Dependencies and version pinning
-- `.claude/settings.json` — Claude Code hooks
-- `.cursor/mcp.json` — Cursor MCP configuration
-- `.solongate/hooks/` — Guard, audit, and stop hooks
-- Lock files — `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lockb`
-- Claude Desktop config — System-level MCP configuration
-
 ## Scoring
 
-- **PROTECTED** = 1 point — full protection for this category
-- **PARTIAL** = 0.5 points — some protection, improvements recommended
-- **NOT PROTECTED** = 0 points — critical gap, action needed
+- **PROTECTED** = 1 point
+- **PARTIAL** = 0.5 points
+- **NOT PROTECTED** = 0 points
 
-Score is displayed as an integer out of 10.
+Score = sum / 10 (integer).
 
 ## Fix issues
 
-Run `npx solongate` to set up protection, or visit [solongate.com](https://solongate.com) for the full security platform.
+Visit [solongate.com](https://solongate.com) for the full security platform.
 
 ## License
 
