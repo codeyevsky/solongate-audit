@@ -132,3 +132,99 @@ export function printFooter(results: CheckResult[]): void {
   }
   console.log('');
 }
+
+// ── Log viewer ──
+
+const SOURCE_COLOR: Record<string, (s: string) => string> = {
+  claude: chalk.magenta,
+  gemini: chalk.blue,
+  openclaw: chalk.green,
+};
+
+const SOURCE_LABEL: Record<string, string> = {
+  claude: 'Claude',
+  gemini: 'Gemini',
+  openclaw: 'OClaw',
+};
+
+function truncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + '\u2026';
+}
+
+function formatTime(ts: string): string {
+  if (!ts) return '          ';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch {
+    return ts.slice(11, 19);
+  }
+}
+
+function formatDate(ts: string): string {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
+export function printToolCall(tc: { toolName: string; arguments: Record<string, unknown>; result?: string; isError?: boolean; timestamp: string; source: string; sessionId: string }): void {
+  const color = SOURCE_COLOR[tc.source] || chalk.white;
+  const label = SOURCE_LABEL[tc.source] || tc.source;
+  const time = formatTime(tc.timestamp);
+  const tool = truncate(tc.toolName, 16);
+
+  // Extract meaningful arg summary
+  const args = tc.arguments;
+  let argSummary = '';
+  if (args.command) argSummary = String(args.command);
+  else if (args.file_path) argSummary = String(args.file_path);
+  else if (args.path) argSummary = String(args.path);
+  else if (args.pattern) argSummary = String(args.pattern);
+  else if (args.url) argSummary = String(args.url);
+  else if (args.query) argSummary = String(args.query);
+  else {
+    const keys = Object.keys(args);
+    if (keys.length > 0) argSummary = JSON.stringify(args);
+  }
+  argSummary = truncate(argSummary.replace(/[\n\r]/g, ' '), 60);
+
+  const errorMark = tc.isError ? chalk.red(' ERR') : '';
+  const resultLen = tc.result ? chalk.dim(` (${tc.result.length}ch)`) : '';
+
+  console.log(
+    `  ${chalk.dim(time)} ${color(label.padEnd(6))} ${chalk.white(tool.padEnd(17))} ${chalk.dim(argSummary)}${errorMark}${resultLen}`
+  );
+}
+
+export function printLogs(data: AuditData, limit: number = 50): void {
+  console.log('');
+  console.log(chalk.bold('  Recent Tool Calls'));
+  console.log(chalk.dim('  ' + '\u2500'.repeat(80)));
+  console.log(chalk.dim('  Time     Source Tool              Arguments'));
+  console.log(chalk.dim('  ' + '\u2500'.repeat(80)));
+
+  const allCalls = data.sessions
+    .flatMap((s) => s.toolCalls)
+    .sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+
+  const recent = allCalls.slice(-limit);
+
+  let lastDate = '';
+  for (const tc of recent) {
+    const date = formatDate(tc.timestamp);
+    if (date !== lastDate) {
+      lastDate = date;
+      console.log(chalk.dim(`\n  \u2500\u2500 ${date} \u2500\u2500`));
+    }
+    printToolCall(tc);
+  }
+
+  console.log('');
+  console.log(chalk.dim(`  Showing last ${recent.length} of ${allCalls.length} total tool calls`));
+  console.log('');
+}
