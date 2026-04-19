@@ -161,6 +161,9 @@ export function exportHTML({ data, results }: ExportPayload): string {
         <td class="det">${r.recommendation ? escapeHTML(r.recommendation) : ''}</td>
       </tr>`).join('');
 
+  // Keys that are already shown in the summary — no need to repeat in accordion
+  const SUMMARY_KEYS = new Set(['command', 'description', 'timeout', 'run_in_background', 'file_path', 'path', 'pattern', 'url', 'query', 'old_string', 'new_string', 'content', 'replace_all']);
+
   const toolRows = allCalls.map((tc) => {
     const session = sessionMap.get(tc.sessionId);
     const argSummary = extractArgSummaryHTML(tc.arguments);
@@ -171,12 +174,17 @@ export function exportHTML({ data, results }: ExportPayload): string {
     const time = tc.timestamp ? new Date(tc.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
     const dateShort = tc.timestamp ? new Date(tc.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : '';
     const dateFull = tc.timestamp ? new Date(tc.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+
+    // Show accordion only if args have extra keys beyond what summary already shows
+    const argKeys = Object.keys(tc.arguments);
+    const hasExtraArgs = argKeys.length > 0 && argFull !== '{}' && argKeys.some((k) => !SUMMARY_KEYS.has(k));
+
     return `
       <tr class="log-row ${tc.isError ? 'err-row' : ''}" data-source="${src}" data-date="${dateFull}">
         <td class="ts"><span class="d">${dateShort}</span> ${time}</td>
         <td><span class="src-tag ${srcClass}">${sourceLabel[src] || src}</span></td>
         <td class="tool">${escapeHTML(tc.toolName)}${tc.isError ? '<span class="err-tag">ERR</span>' : ''}</td>
-        <td class="args">${argSummary}${argFull !== '{}' ? `<div class="acc"><span class="acc-toggle">json</span><div class="acc-body"><div><pre>${argFull}</pre></div></div></div>` : ''}</td>
+        <td class="args">${argSummary}${hasExtraArgs ? `<div class="acc"><span class="acc-toggle">json</span><div class="acc-body"><div><pre>${argFull}</pre></div></div></div>` : ''}</td>
         <td>${resStr ? `<div class="acc"><span class="acc-toggle">${tc.isError ? '<span style="color:#f87171">error</span>' : 'result'}</span><div class="acc-body"><div><pre>${resStr}</pre></div></div></div>` : '<span style="color:#2a2a2e">&mdash;</span>'}</td>
         <td class="meta">${escapeHTML(tc.id.slice(0, 8))}<br>${escapeHTML(session?.model || '-')}</td>
       </tr>`;
