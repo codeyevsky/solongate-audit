@@ -2,6 +2,7 @@ import { collectLogs } from './collector.js';
 import { runAllChecks } from './checks/index.js';
 import { printHeader, printLogSummary, printCompactReport, printScore, printDetailedReport, printFooter, calcScore, printLogs, printToolCall } from './reporter.js';
 import { addDir, removeDir, listDirs, searchLogs } from './config.js';
+import { Spinner } from './spinner.js';
 import chalk from 'chalk';
 
 const args = process.argv.slice(2);
@@ -63,10 +64,18 @@ function getLogLimit(): number {
   return 50;
 }
 
-function runAudit() {
+function runAudit(silent = false) {
+  const spinner = silent ? null : new Spinner('Scanning AI tool logs...');
+  spinner?.start();
+
   const data = collectLogs();
+  spinner?.update('Running OWASP Agentic Top 10 checks...');
+
   const results = runAllChecks(data);
   const { intScore } = calcScore(results);
+
+  spinner?.stop(`Scanned ${data.totalToolCalls} tool calls across ${data.sessions.length} sessions`);
+
   return { data, results, intScore };
 }
 
@@ -122,9 +131,9 @@ if (showWatch) {
 
   init();
 
-  // Poll for new logs
+  // Poll for new logs (silent — no spinner during polling)
   setInterval(() => {
-    const { data, results } = runAudit();
+    const { data, results } = runAudit(true);
 
     if (data.totalToolCalls !== lastToolCount || data.sessions.length !== lastSessionCount) {
       // Find new tool calls
@@ -161,7 +170,7 @@ if (showWatch) {
   printLogs(data, getLogLimit());
 
 } else {
-  const { data, results, intScore } = runAudit();
+  const { data, results, intScore } = runAudit(showJson);
 
   if (showJson) {
     console.log(JSON.stringify({
