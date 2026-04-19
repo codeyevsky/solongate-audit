@@ -128,34 +128,22 @@ export function exportHTML({ data, results }: ExportPayload): string {
   const sessionMap = new Map(data.sessions.map((s) => [s.id, s]));
   const errorCount = allCalls.filter((tc) => tc.isError).length;
 
-  const statusColor: Record<string, string> = {
-    PROTECTED: '#22c55e',
-    PARTIAL: '#eab308',
-    NOT_PROTECTED: '#ef4444',
-  };
-
-  const statusBg: Record<string, string> = {
-    PROTECTED: 'rgba(34,197,94,0.1)',
-    PARTIAL: 'rgba(234,179,8,0.1)',
-    NOT_PROTECTED: 'rgba(239,68,68,0.1)',
-  };
-
   const statusIcon: Record<string, string> = {
     PROTECTED: '&#x2705;',
     PARTIAL: '&#x26A0;&#xFE0F;',
     NOT_PROTECTED: '&#x274C;',
   };
 
-  const sourceColor: Record<string, string> = {
-    claude: '#c084fc',
-    gemini: '#60a5fa',
-    openclaw: '#4ade80',
-  };
-
   const sourceLabel: Record<string, string> = {
     claude: 'Claude',
     gemini: 'Gemini',
     openclaw: 'OpenClaw',
+  };
+
+  const pillClass: Record<string, string> = {
+    PROTECTED: 'pill pill-green',
+    PARTIAL: 'pill pill-yellow',
+    NOT_PROTECTED: 'pill pill-red',
   };
 
   const auditRows = results
@@ -165,12 +153,12 @@ export function exportHTML({ data, results }: ExportPayload): string {
     })
     .map((r) => `
       <tr>
-        <td style="text-align:center">${statusIcon[r.status]}</td>
-        <td><span class="code-badge">${escapeHTML(r.code)}</span></td>
-        <td class="cat-name">${escapeHTML(r.title)}</td>
-        <td><span class="status-pill" style="background:${statusBg[r.status]};color:${statusColor[r.status]}">${r.status.replace(/_/g, ' ')}</span></td>
-        <td class="detail-text">${escapeHTML(r.summary)}</td>
-        <td class="detail-text">${r.recommendation ? escapeHTML(r.recommendation) : ''}</td>
+        <td style="text-align:center;font-size:14px">${statusIcon[r.status]}</td>
+        <td><span class="code-tag">${escapeHTML(r.code)}</span></td>
+        <td class="cat">${escapeHTML(r.title)}</td>
+        <td><span class="${pillClass[r.status]}">${r.status.replace(/_/g, ' ')}</span></td>
+        <td class="det">${escapeHTML(r.summary)}</td>
+        <td class="det">${r.recommendation ? escapeHTML(r.recommendation) : ''}</td>
       </tr>`).join('');
 
   const toolRows = allCalls.map((tc) => {
@@ -179,21 +167,23 @@ export function exportHTML({ data, results }: ExportPayload): string {
     const argFull = escapeHTML(JSON.stringify(tc.arguments, null, 2));
     const resStr = escapeHTML((tc.result || '').slice(0, 500));
     const src = tc.source;
+    const srcClass = 'src-' + src;
     const time = tc.timestamp ? new Date(tc.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-    const date = tc.timestamp ? new Date(tc.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '';
+    const date = tc.timestamp ? new Date(tc.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : '';
     return `
-      <tr class="${tc.isError ? 'error-row' : ''}" data-source="${src}">
-        <td class="ts"><span class="date-dim">${date}</span> ${time}</td>
-        <td><span class="source-badge" style="background:${sourceColor[src] || '#888'}20;color:${sourceColor[src] || '#888'}">${sourceLabel[src] || src}</span></td>
-        <td class="tool-name">${escapeHTML(tc.toolName)}${tc.isError ? ' <span class="err-badge">ERR</span>' : ''}</td>
-        <td class="arg-cell">${argSummary}${argFull !== '{}' ? `<details><summary class="expand-link">full JSON</summary><pre class="code-block">${argFull}</pre></details>` : ''}</td>
-        <td class="result-cell">${resStr ? `<details><summary class="expand-link">${tc.isError ? '<span style="color:#f87171">error</span>' : 'result'}</summary><pre class="code-block">${resStr}</pre></details>` : '<span style="color:#555">-</span>'}</td>
-        <td class="meta-cell">${escapeHTML(tc.id.slice(0, 8))}<br><span style="color:#666">${escapeHTML(session?.model || '-')}</span></td>
+      <tr class="${tc.isError ? 'err-row' : ''}" data-source="${src}">
+        <td class="ts"><span class="d">${date}</span> ${time}</td>
+        <td><span class="src-tag ${srcClass}">${sourceLabel[src] || src}</span></td>
+        <td class="tool">${escapeHTML(tc.toolName)}${tc.isError ? '<span class="err-tag">ERR</span>' : ''}</td>
+        <td class="args">${argSummary}${argFull !== '{}' ? `<div class="acc"><span class="acc-toggle">json</span><div class="acc-body"><div><pre>${argFull}</pre></div></div></div>` : ''}</td>
+        <td>${resStr ? `<div class="acc"><span class="acc-toggle">${tc.isError ? '<span style="color:#f87171">error</span>' : 'result'}</span><div class="acc-body"><div><pre>${resStr}</pre></div></div></div>` : '<span style="color:#2a2a2e">&mdash;</span>'}</td>
+        <td class="meta">${escapeHTML(tc.id.slice(0, 8))}<br>${escapeHTML(session?.model || '-')}</td>
       </tr>`;
   }).join('');
 
   const scoreColor = intScore >= 7 ? '#22c55e' : intScore >= 4 ? '#eab308' : '#ef4444';
-  const scoreGlow = intScore >= 7 ? '0 0 40px rgba(34,197,94,0.3)' : intScore >= 4 ? '0 0 40px rgba(234,179,8,0.2)' : '0 0 40px rgba(239,68,68,0.3)';
+
+  const solongateSvg = `<svg width="36" height="36" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg"><rect fill="white" width="180" height="180" rx="37"/><g style="transform:scale(95%);transform-origin:center"><path fill="black" d="M101.141 53H136.632C151.023 53 162.689 64.6662 162.689 79.0573V112.904H148.112V79.0573C148.112 78.7105 148.098 78.3662 148.072 78.0251L112.581 112.898C112.701 112.902 112.821 112.904 112.941 112.904H148.112V126.672H112.941C98.5504 126.672 86.5638 114.891 86.5638 100.5V66.7434H101.141V100.5C101.141 101.15 101.191 101.792 101.289 102.422L137.56 66.7816C137.255 66.7563 136.945 66.7434 136.632 66.7434H101.141V53Z"/><path fill="black" d="M65.2926 124.136L14 66.7372H34.6355L64.7495 100.436V66.7372H80.1365V118.47C80.1365 126.278 70.4953 129.958 65.2926 124.136Z"/></g></svg>`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -202,217 +192,188 @@ export function exportHTML({ data, results }: ExportPayload): string {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SolonGate Audit Report</title>
 <style>
-  :root { --bg: #09090b; --surface: #18181b; --surface2: #27272a; --border: #3f3f46; --text: #fafafa; --text2: #a1a1aa; --accent: #60a5fa; }
+  :root { --bg: #0c0c0e; --surface: #161618; --surface2: #1e1e21; --border: #2a2a2e; --text: #e8e8ec; --text2: #8b8b96; --accent: #7c8aff; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
-
-  .container { max-width: 1440px; margin: 0 auto; padding: 40px 32px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1360px; margin: 0 auto; padding: 48px 40px 80px; }
 
   /* Header */
-  .header { display: flex; align-items: center; gap: 16px; margin-bottom: 32px; }
-  .logo { width: 40px; height: 40px; background: linear-gradient(135deg, #60a5fa, #a78bfa); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; color: #000; }
-  .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
-  .header .subtitle { color: var(--text2); font-size: 13px; margin-top: 2px; }
+  .hdr { display: flex; align-items: center; gap: 14px; margin-bottom: 40px; }
+  .hdr svg { flex-shrink: 0; }
+  .hdr-text h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; color: #fff; }
+  .hdr-text p { font-size: 12px; color: var(--text2); margin-top: 1px; }
 
-  /* Stats Row */
-  .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
-  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
-  .stat-label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
-  .stat-value { font-size: 28px; font-weight: 800; margin-top: 6px; letter-spacing: -1px; }
-  .stat-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  /* Grid */
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  @media (max-width: 800px) { .grid4 { grid-template-columns: repeat(2, 1fr); } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  .card-label { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 1.2px; font-weight: 500; }
+  .card-val { font-size: 26px; font-weight: 700; margin-top: 4px; color: #fff; }
+  .card-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
 
   /* Score */
-  .score-section { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 32px; margin-bottom: 32px; display: flex; align-items: center; gap: 32px; box-shadow: ${scoreGlow}; }
-  .score-ring { width: 120px; height: 120px; position: relative; flex-shrink: 0; }
-  .score-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-  .score-ring circle { fill: none; stroke-width: 8; }
-  .score-ring .bg { stroke: var(--surface2); }
-  .score-ring .fg { stroke: ${scoreColor}; stroke-linecap: round; stroke-dasharray: ${(intScore / 10) * 314} 314; transition: stroke-dasharray 1s ease; }
-  .score-num { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 32px; font-weight: 900; color: ${scoreColor}; }
-  .score-info h3 { font-size: 18px; margin-bottom: 4px; }
-  .score-info p { color: var(--text2); font-size: 14px; }
+  .score-bar { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 24px 28px; margin-bottom: 28px; display: flex; align-items: center; gap: 24px; }
+  .ring { width: 80px; height: 80px; position: relative; flex-shrink: 0; }
+  .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .ring circle { fill: none; stroke-width: 6; }
+  .ring .track { stroke: var(--surface2); }
+  .ring .fill { stroke: ${scoreColor}; stroke-linecap: round; stroke-dasharray: 0 251; }
+  .ring .num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 700; color: ${scoreColor}; }
+  .score-txt h3 { font-size: 15px; font-weight: 600; color: #fff; }
+  .score-txt p { font-size: 13px; color: var(--text2); margin-top: 2px; }
+  .score-txt a { color: ${scoreColor}; text-decoration: none; font-weight: 500; }
 
   /* Section */
-  .section { margin-bottom: 32px; }
-  .section-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-  .section-count { background: var(--surface2); color: var(--text2); font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .sec { margin-bottom: 28px; }
+  .sec-hdr { font-size: 13px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .sec-count { background: var(--surface2); font-size: 10px; padding: 1px 7px; border-radius: 8px; font-weight: 600; color: var(--text2); }
 
-  /* Tables */
-  table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-  th { text-align: left; padding: 12px 16px; background: var(--surface2); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); font-weight: 600; border-bottom: 1px solid var(--border); }
-  td { padding: 10px 16px; border-bottom: 1px solid #27272a; font-size: 13px; vertical-align: top; }
-  tr:last-child td { border-bottom: none; }
-  tbody tr:hover { background: rgba(96,165,250,0.04); }
-  .error-row { background: rgba(239,68,68,0.06); }
-  .error-row:hover { background: rgba(239,68,68,0.1); }
+  /* Table */
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th { text-align: left; padding: 10px 14px; background: var(--surface2); font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text2); font-weight: 600; }
+  td { padding: 9px 14px; border-top: 1px solid var(--border); font-size: 12px; vertical-align: top; }
+  tbody tr { transition: background 0.15s; }
+  tbody tr:hover { background: rgba(124,138,255,0.04); }
+  .err-row { background: rgba(239,68,68,0.05); }
+  .err-row:hover { background: rgba(239,68,68,0.08); }
 
   /* Badges */
-  .code-badge { background: var(--surface2); color: var(--accent); padding: 2px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; }
-  .status-pill { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
-  .source-badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-  .err-badge { background: rgba(239,68,68,0.2); color: #f87171; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; }
-  .cat-name { font-weight: 600; }
-  .detail-text { font-size: 12px; color: var(--text2); max-width: 300px; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; }
+  .pill-green { background: rgba(34,197,94,0.12); color: #4ade80; }
+  .pill-yellow { background: rgba(234,179,8,0.12); color: #facc15; }
+  .pill-red { background: rgba(239,68,68,0.12); color: #f87171; }
+  .code-tag { color: var(--accent); font-weight: 600; font-size: 11px; }
+  .src-tag { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 10px; font-weight: 600; }
+  .src-claude { background: rgba(192,132,252,0.12); color: #c084fc; }
+  .src-gemini { background: rgba(96,165,250,0.12); color: #60a5fa; }
+  .src-openclaw { background: rgba(74,222,128,0.12); color: #4ade80; }
+  .err-tag { background: rgba(239,68,68,0.15); color: #f87171; padding: 0 5px; border-radius: 3px; font-size: 9px; font-weight: 700; margin-left: 4px; }
+  .cat { font-weight: 500; }
+  .det { font-size: 11px; color: var(--text2); max-width: 280px; line-height: 1.4; }
 
-  /* Tool call table specifics */
-  .ts { white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text2); }
-  .date-dim { color: #52525b; }
-  .tool-name { font-weight: 600; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: nowrap; }
-  .arg-cell { font-family: 'JetBrains Mono', monospace; font-size: 12px; max-width: 400px; word-break: break-all; }
-  .result-cell { max-width: 200px; }
-  .meta-cell { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text2); white-space: nowrap; }
+  /* Mono cells */
+  .ts { white-space: nowrap; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 11px; color: var(--text2); }
+  .ts .d { color: #3f3f46; }
+  .tool { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .args { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 11px; max-width: 380px; word-break: break-all; line-height: 1.4; }
+  .meta { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 10px; color: var(--text2); white-space: nowrap; }
 
-  /* Expandable */
-  .expand-link { cursor: pointer; color: var(--accent); font-size: 11px; opacity: 0.7; margin-top: 4px; }
-  .expand-link:hover { opacity: 1; }
-  .code-block { background: var(--bg); padding: 10px 12px; border-radius: 6px; margin-top: 6px; font-size: 11px; max-height: 250px; overflow: auto; white-space: pre-wrap; word-break: break-all; border: 1px solid var(--border); color: var(--text2); }
+  /* Accordion — animated with CSS grid trick */
+  .acc { margin-top: 4px; }
+  .acc-toggle { cursor: pointer; color: var(--accent); font-size: 10px; font-weight: 500; user-select: none; display: inline-flex; align-items: center; gap: 3px; opacity: 0.7; transition: opacity 0.15s; }
+  .acc-toggle:hover { opacity: 1; }
+  .acc-toggle::before { content: '\\25B8'; font-size: 8px; transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); display: inline-block; }
+  .acc-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease; opacity: 0; }
+  .acc-body > div { overflow: hidden; }
+  .acc.open .acc-toggle::before { transform: rotate(90deg); }
+  .acc.open .acc-body { grid-template-rows: 1fr; opacity: 1; }
+  .acc pre { background: var(--bg); padding: 10px 12px; border-radius: 6px; margin-top: 6px; font-size: 10px; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all; border: 1px solid var(--border); color: var(--text2); line-height: 1.5; }
 
-  /* Filter Bar */
-  .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .filter-bar input, .filter-bar select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 13px; outline: none; transition: border-color 0.2s; }
-  .filter-bar input:focus, .filter-bar select:focus { border-color: var(--accent); }
-  .filter-bar input { flex: 1; min-width: 240px; }
-
-  /* Buttons */
-  .btn-group { position: fixed; bottom: 24px; right: 24px; display: flex; gap: 8px; z-index: 100; }
-  .btn { border: none; padding: 10px 20px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 13px; transition: transform 0.1s, box-shadow 0.2s; }
-  .btn:hover { transform: translateY(-1px); }
-  .btn:active { transform: translateY(0); }
-  .btn-primary { background: var(--accent); color: #000; box-shadow: 0 4px 12px rgba(96,165,250,0.3); }
-  .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  /* Filter */
+  .filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .filters input, .filters select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 7px 12px; border-radius: 6px; font-size: 12px; outline: none; transition: border-color 0.2s; }
+  .filters input:focus, .filters select:focus { border-color: var(--accent); }
+  .filters input { flex: 1; min-width: 220px; }
 
   /* Footer */
-  .footer { text-align: center; margin-top: 48px; padding: 24px; border-top: 1px solid var(--border); }
-  .footer a { color: var(--accent); text-decoration: none; font-weight: 600; }
-  .footer p { color: #52525b; font-size: 12px; margin-top: 4px; }
-
-  /* Scroll to top */
-  #scrollTop { display: none; position: fixed; bottom: 24px; left: 24px; background: var(--surface2); border: 1px solid var(--border); color: var(--text); width: 40px; height: 40px; border-radius: 8px; cursor: pointer; font-size: 18px; z-index: 100; }
+  .ftr { text-align: center; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border); }
+  .ftr a { color: var(--text2); text-decoration: none; font-size: 12px; font-weight: 500; transition: color 0.15s; }
+  .ftr a:hover { color: #fff; }
+  .ftr p { color: #3f3f46; font-size: 11px; margin-top: 4px; }
 
   @media print {
-    body { background: #fff; color: #000; }
-    .container { padding: 16px; }
-    .stat-card, .score-section, table { background: #fff; border-color: #ddd; }
-    th { background: #f5f5f5; color: #333; border-color: #ddd; }
+    body { background: #fff; color: #111; }
+    .wrap { padding: 16px; }
+    .card, .score-bar, table { background: #fff; border-color: #e5e5e5; }
+    th { background: #f5f5f5; color: #333; }
     td { border-color: #eee; }
-    .code-block { background: #f8f8f8; border-color: #ddd; }
+    .acc pre { background: #f8f8f8; border-color: #e5e5e5; }
     tbody tr:hover { background: transparent; }
-    .error-row { background: #fff5f5; }
-    .btn-group, .filter-bar, #scrollTop { display: none !important; }
+    .err-row { background: #fef2f2; }
+    .filters { display: none; }
     @page { size: A4 landscape; margin: 8mm; }
   }
 </style>
 </head>
 <body>
-<div class="container">
+<div class="wrap">
 
-<div class="header">
-  <div class="logo">S</div>
-  <div>
-    <h1>SolonGate Security Audit</h1>
-    <div class="subtitle">OWASP Agentic Top 10 &mdash; ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
+<div class="hdr">
+  ${solongateSvg}
+  <div class="hdr-text">
+    <h1>Security Audit</h1>
+    <p>OWASP Agentic Top 10 &middot; ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
   </div>
 </div>
 
-<div class="stats-row">
-  <div class="stat-card">
-    <div class="stat-label">AI Tools</div>
-    <div class="stat-value">${data.sources.length}</div>
-    <div class="stat-sub">${data.sources.join(', ') || 'None detected'}</div>
+<div class="grid4">
+  <div class="card"><div class="card-label">AI Tools</div><div class="card-val">${data.sources.length}</div><div class="card-sub">${data.sources.join(', ') || 'None'}</div></div>
+  <div class="card"><div class="card-label">Sessions</div><div class="card-val">${data.sessions.length}</div><div class="card-sub">${data.timeRange ? new Date(data.timeRange.from).toLocaleDateString('en-GB', {day:'numeric',month:'short'}) + ' &ndash; ' + new Date(data.timeRange.to).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) : '-'}</div></div>
+  <div class="card"><div class="card-label">Tool Calls</div><div class="card-val">${data.totalToolCalls.toLocaleString()}</div><div class="card-sub">${errorCount > 0 ? errorCount + ' error' + (errorCount > 1 ? 's' : '') : 'No errors'}</div></div>
+  <div class="card"><div class="card-label">Critical Issues</div><div class="card-val" style="color:${fixCount > 0 ? '#f87171' : '#4ade80'}">${fixCount}</div><div class="card-sub">${fixCount > 0 ? 'need attention' : 'none'}</div></div>
+</div>
+
+<div class="score-bar">
+  <div class="ring">
+    <svg viewBox="0 0 100 100"><circle class="track" cx="50" cy="50" r="40"/><circle class="fill" cx="50" cy="50" r="40"/></svg>
+    <div class="num">${intScore}</div>
   </div>
-  <div class="stat-card">
-    <div class="stat-label">Sessions</div>
-    <div class="stat-value">${data.sessions.length}</div>
-    <div class="stat-sub">${data.timeRange ? new Date(data.timeRange.from).toLocaleDateString('en-GB') + ' &ndash; ' + new Date(data.timeRange.to).toLocaleDateString('en-GB') : 'N/A'}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Tool Calls</div>
-    <div class="stat-value">${data.totalToolCalls.toLocaleString()}</div>
-    <div class="stat-sub">${errorCount > 0 ? errorCount + ' error' + (errorCount > 1 ? 's' : '') : 'No errors'}</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-label">Issues Found</div>
-    <div class="stat-value" style="color:${fixCount > 0 ? '#ef4444' : '#22c55e'}">${fixCount}</div>
-    <div class="stat-sub">${fixCount > 0 ? 'critical categories' : 'All clear'}</div>
+  <div class="score-txt">
+    <h3>${intScore}/10</h3>
+    <p>${intScore >= 7 ? 'Good protection.' : intScore >= 4 ? 'Several categories need attention.' : 'Critical gaps across multiple categories.'}</p>
+    ${fixCount > 0 ? `<p style="margin-top:6px"><a href="https://solongate.com">Fix ${fixCount} issue${fixCount > 1 ? 's' : ''} &rarr;</a></p>` : ''}
   </div>
 </div>
 
-<div class="score-section">
-  <div class="score-ring">
-    <svg viewBox="0 0 120 120">
-      <circle class="bg" cx="60" cy="60" r="50" />
-      <circle class="fg" cx="60" cy="60" r="50" />
-    </svg>
-    <div class="score-num">${intScore}</div>
-  </div>
-  <div class="score-info">
-    <h3>Security Score: ${intScore}/10</h3>
-    <p>${intScore >= 7 ? 'Good protection level. Keep monitoring for changes.' : intScore >= 4 ? 'Moderate protection. Several categories need attention.' : 'Low protection. Critical security gaps detected across multiple categories.'}</p>
-    ${fixCount > 0 ? `<p style="margin-top:8px"><a href="https://solongate.com" style="color:${scoreColor};text-decoration:none;font-weight:600">Fix ${fixCount} issue${fixCount > 1 ? 's' : ''} &rarr; solongate.com</a></p>` : ''}
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title">Audit Results <span class="section-count">${results.length} checks</span></div>
+<div class="sec">
+  <div class="sec-hdr">Audit Results <span class="sec-count">${results.length}</span></div>
   <table>
-    <thead><tr><th style="width:40px"></th><th>Code</th><th>Category</th><th>Status</th><th>Details</th><th>Recommendation</th></tr></thead>
+    <thead><tr><th style="width:32px"></th><th>Code</th><th>Category</th><th>Status</th><th>Details</th><th>Recommendation</th></tr></thead>
     <tbody>${auditRows}</tbody>
   </table>
 </div>
 
-<div class="section">
-  <div class="section-title">Tool Call Log <span class="section-count">${allCalls.length.toLocaleString()} calls</span></div>
-  <div class="filter-bar">
-    <input type="text" id="searchInput" placeholder="Search tool name, arguments, source..." oninput="filterTable()">
-    <select id="sourceFilter" onchange="filterTable()">
-      <option value="">All Sources</option>
-      <option value="claude">Claude</option>
-      <option value="gemini">Gemini</option>
-      <option value="openclaw">OpenClaw</option>
-    </select>
-    <select id="errorFilter" onchange="filterTable()">
-      <option value="">All Status</option>
-      <option value="error">Errors Only</option>
-      <option value="success">Success Only</option>
-    </select>
+<div class="sec">
+  <div class="sec-hdr">Tool Calls <span class="sec-count">${allCalls.length.toLocaleString()}</span></div>
+  <div class="filters">
+    <input type="text" id="q" placeholder="Search..." oninput="ft()">
+    <select id="sf" onchange="ft()"><option value="">All sources</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="openclaw">OpenClaw</option></select>
+    <select id="ef" onchange="ft()"><option value="">All</option><option value="e">Errors</option><option value="s">Success</option></select>
   </div>
-  <table id="logTable">
+  <table id="lt">
     <thead><tr><th>Time</th><th>Source</th><th>Tool</th><th>Arguments</th><th>Result</th><th>Meta</th></tr></thead>
     <tbody>${toolRows}</tbody>
   </table>
 </div>
 
-<div class="btn-group">
-  <button class="btn btn-secondary" onclick="scrollTo({top:0,behavior:'smooth'})">&#x2191; Top</button>
-  <button class="btn btn-primary" onclick="window.print()">&#x1F4E4; Export PDF</button>
-</div>
-
-<div class="footer">
+<div class="ftr">
   <a href="https://solongate.com">solongate.com</a>
-  <p>AI Agent Security &mdash; OWASP Agentic Top 10 Audit</p>
+  <p>AI Agent Security</p>
 </div>
 
 </div>
-
 <script>
-function filterTable() {
-  const search = document.getElementById('searchInput').value.toLowerCase();
-  const source = document.getElementById('sourceFilter').value;
-  const error = document.getElementById('errorFilter').value;
-  const rows = document.querySelectorAll('#logTable tbody tr');
-  let visible = 0;
-  rows.forEach(row => {
-    const text = row.textContent.toLowerCase();
-    const rowSource = row.getAttribute('data-source') || '';
-    const isError = row.classList.contains('error-row');
-    const matchSearch = !search || text.includes(search);
-    const matchSource = !source || rowSource === source;
-    const matchError = !error || (error === 'error' && isError) || (error === 'success' && !isError);
-    const show = matchSearch && matchSource && matchError;
-    row.style.display = show ? '' : 'none';
-    if (show) visible++;
+document.addEventListener('click',function(e){
+  var t=e.target.closest('.acc-toggle');
+  if(t){var a=t.closest('.acc');a.classList.toggle('open');}
+});
+function ft(){
+  var q=document.getElementById('q').value.toLowerCase();
+  var s=document.getElementById('sf').value;
+  var ef=document.getElementById('ef').value;
+  document.querySelectorAll('#lt tbody tr').forEach(function(r){
+    var txt=r.textContent.toLowerCase();
+    var src=r.getAttribute('data-source')||'';
+    var err=r.classList.contains('err-row');
+    var ok=(!q||txt.indexOf(q)!==-1)&&(!s||src===s)&&(!ef||(ef==='e'&&err)||(ef==='s'&&!err));
+    r.style.display=ok?'':'none';
   });
 }
+// Animate score ring on load
+requestAnimationFrame(function(){setTimeout(function(){
+  var c=document.querySelector('.ring .fill');
+  if(c) c.style.strokeDasharray='${Math.round((intScore / 10) * 251)} 251';
+},100)});
 </script>
 </body>
 </html>`;
