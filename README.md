@@ -120,6 +120,12 @@ Exit code `0` if score >= 7/10, exit code `1` otherwise.
 - run: npx solongate-audit
 ```
 
+### Auto-publish
+
+When a commit is pushed to `main` with a new version in `package.json`, GitHub Actions automatically publishes to npm. No manual `npm publish` needed.
+
+To set up: add your npm token as `NPM_TOKEN` in GitHub repo → Settings → Secrets → Actions.
+
 ## Scoring
 
 - **PROTECTED** = 1 point
