@@ -1,6 +1,6 @@
 {
   "name": "solongate-audit",
-  "version": "1.10.6",
+  "version": "1.10.7",
   "description": "AI agent audit log tool — scans Claude Code, Gemini CLI & OpenClaw logs against OWASP Agentic Top 10",
   "type": "module",
   "bin": {
