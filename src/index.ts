@@ -2,6 +2,7 @@ import { collectLogs } from './collector.js';
 import { runAllChecks } from './checks/index.js';
 import { printHeader, printLogSummary, printCompactReport, printScore, printDetailedReport, printFooter, calcScore, printLogs, printToolCall } from './reporter.js';
 import { addDir, removeDir, listDirs, searchLogs } from './config.js';
+import { runExport } from './export.js';
 import { Spinner } from './spinner.js';
 import chalk from 'chalk';
 
@@ -39,6 +40,13 @@ if (args.includes('--help') || args.includes('-h')) {
     npx solongate-audit --watch         Live monitoring with log feed
     npx solongate-audit --json          Machine-readable JSON output
 
+  Export:
+    npx solongate-audit --export json   Export full report as JSON
+    npx solongate-audit --export csv    Export tool calls as CSV
+    npx solongate-audit --export html   Export visual HTML report
+    npx solongate-audit --export pdf    Export PDF-ready HTML (print to PDF)
+    npx solongate-audit --export all    Export all formats at once
+
   Log directories:
     npx solongate-audit --search        Search system for AI tool logs
     npx solongate-audit --list-dirs     Show all log directories
@@ -55,6 +63,7 @@ const showDetailed = args.includes('--detailed') || args.includes('-d');
 const showJson = args.includes('--json');
 const showWatch = args.includes('--watch') || args.includes('-w');
 const showLogs = args.includes('--logs') || args.includes('-l');
+const showExport = args.includes('--export') || args.includes('-e');
 
 function getLogLimit(): number {
   const idx = args.indexOf('--logs') !== -1 ? args.indexOf('--logs') : args.indexOf('-l');
@@ -88,6 +97,20 @@ function printReport(data: ReturnType<typeof collectLogs>, results: ReturnType<t
     printDetailedReport(results);
     printFooter(results);
   }
+}
+
+// ── Export command ──
+if (showExport) {
+  const idx = args.indexOf('--export') !== -1 ? args.indexOf('--export') : args.indexOf('-e');
+  const format = args[idx + 1];
+  if (!format || format.startsWith('-')) {
+    console.log('  Usage: solongate-audit --export <json|csv|html|pdf|all>');
+    process.exit(1);
+  }
+  const { data, results } = runAudit();
+  printReport(data, results);
+  runExport(format, { data, results });
+  process.exit(0);
 }
 
 if (showWatch) {

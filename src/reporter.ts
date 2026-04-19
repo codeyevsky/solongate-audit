@@ -172,51 +172,80 @@ function formatDate(ts: string): string {
   }
 }
 
-export function printToolCall(tc: { toolName: string; arguments: Record<string, unknown>; result?: string; isError?: boolean; timestamp: string; source: string; sessionId: string }, detailed: boolean = false): void {
+function extractArgSummary(args: Record<string, unknown>): string {
+  if (args.command) return String(args.command);
+  if (args.file_path) return String(args.file_path);
+  if (args.path) return String(args.path);
+  if (args.pattern) return String(args.pattern);
+  if (args.url) return String(args.url);
+  if (args.query) return String(args.query);
+  if (args.old_string) return `"${String(args.old_string).slice(0, 30)}" \u2192 "${String(args.new_string || '').slice(0, 30)}"`;
+  if (args.content) return `[${String(args.content).length} chars]`;
+  const keys = Object.keys(args);
+  if (keys.length > 0) return JSON.stringify(args);
+  return '';
+}
+
+export function printToolCall(tc: { id: string; toolName: string; arguments: Record<string, unknown>; result?: string; isError?: boolean; timestamp: string; source: string; sessionId: string }, detailed: boolean = false, model?: string): void {
   const color = SOURCE_COLOR[tc.source] || chalk.white;
   const label = SOURCE_LABEL[tc.source] || tc.source;
   const time = formatTime(tc.timestamp);
   const tool = truncate(tc.toolName, 16);
-
-  // Extract meaningful arg summary
-  const args = tc.arguments;
-  let argSummary = '';
-  if (args.command) argSummary = String(args.command);
-  else if (args.file_path) argSummary = String(args.file_path);
-  else if (args.path) argSummary = String(args.path);
-  else if (args.pattern) argSummary = String(args.pattern);
-  else if (args.url) argSummary = String(args.url);
-  else if (args.query) argSummary = String(args.query);
-  else if (args.old_string) argSummary = `"${String(args.old_string).slice(0, 30)}" → "${String(args.new_string || '').slice(0, 30)}"`;
-  else if (args.content) argSummary = `[${String(args.content).length} chars]`;
-  else {
-    const keys = Object.keys(args);
-    if (keys.length > 0) argSummary = JSON.stringify(args);
-  }
-  argSummary = truncate(argSummary.replace(/[\n\r]/g, ' '), 70);
-
   const errorMark = tc.isError ? chalk.red(' ERR') : '';
 
-  console.log(
-    `  ${chalk.dim(time)} ${color(label.padEnd(6))} ${chalk.white(tool.padEnd(17))} ${chalk.dim(argSummary)}${errorMark}`
-  );
+  if (!detailed) {
+    // Compact mode — single line
+    const argSummary = truncate(extractArgSummary(tc.arguments).replace(/[\n\r]/g, ' '), 70);
+    console.log(
+      `  ${chalk.dim(time)} ${color(label.padEnd(6))} ${chalk.white(tool.padEnd(17))} ${chalk.dim(argSummary)}${errorMark}`
+    );
+    return;
+  }
 
-  // Show result preview in detailed mode
-  if (detailed && tc.result) {
-    const resultPreview = tc.result.replace(/[\n\r]+/g, ' ').trim();
-    if (resultPreview.length > 0) {
-      const icon = tc.isError ? chalk.red('\u2718') : chalk.green('\u2714');
-      console.log(`  ${' '.repeat(9)}${icon} ${chalk.dim(truncate(resultPreview, 80))}`);
+  // Detailed mode — multi-line with all fields
+  console.log(
+    `  ${chalk.dim(time)} ${color(label.padEnd(6))} ${chalk.white.bold(tool)}${errorMark}`
+  );
+  console.log(`  ${' '.repeat(9)}${chalk.dim('ID:')} ${chalk.dim(tc.id.slice(0, 12))}  ${chalk.dim('Session:')} ${chalk.dim(tc.sessionId.slice(0, 12))}${model ? '  ' + chalk.dim('Model:') + ' ' + chalk.dim(model) : ''}`);
+
+  // Full arguments
+  const argStr = extractArgSummary(tc.arguments).replace(/[\n\r]/g, ' ');
+  if (argStr.length > 0) {
+    if (argStr.length <= 120) {
+      console.log(`  ${' '.repeat(9)}${chalk.cyan('\u25B8')} ${argStr}`);
+    } else {
+      // Multi-line for long args
+      const lines = argStr.match(/.{1,120}/g) || [argStr];
+      console.log(`  ${' '.repeat(9)}${chalk.cyan('\u25B8')} ${lines[0]}`);
+      for (let i = 1; i < Math.min(lines.length, 4); i++) {
+        console.log(`  ${' '.repeat(11)}${lines[i]}`);
+      }
+      if (lines.length > 4) console.log(`  ${' '.repeat(11)}${chalk.dim(`... +${lines.length - 4} more lines`)}`);
     }
   }
+
+  // Result preview
+  if (tc.result) {
+    const resultStr = tc.result.replace(/[\n\r]+/g, ' ').trim();
+    if (resultStr.length > 0) {
+      const icon = tc.isError ? chalk.red('\u2718') : chalk.green('\u2714');
+      const preview = truncate(resultStr, 120);
+      console.log(`  ${' '.repeat(9)}${icon} ${chalk.dim(preview)}`);
+    }
+  }
+  console.log('');
 }
 
 export function printLogs(data: AuditData, limit: number = 50, detailed: boolean = true): void {
   console.log('');
   console.log(chalk.bold('  Recent Tool Calls'));
   console.log(chalk.dim('  ' + '\u2500'.repeat(90)));
-  console.log(chalk.dim('  Time     Source Tool              Arguments'));
-  console.log(chalk.dim('  ' + '\u2500'.repeat(90)));
+  if (!detailed) {
+    console.log(chalk.dim('  Time     Source Tool              Arguments'));
+    console.log(chalk.dim('  ' + '\u2500'.repeat(90)));
+  }
+
+  const sessionMap = new Map(data.sessions.map((s) => [s.id, s]));
 
   const allCalls = data.sessions
     .flatMap((s) => s.toolCalls)
@@ -231,7 +260,8 @@ export function printLogs(data: AuditData, limit: number = 50, detailed: boolean
       lastDate = date;
       console.log(chalk.dim(`\n  \u2500\u2500 ${date} \u2500\u2500`));
     }
-    printToolCall(tc, detailed);
+    const session = sessionMap.get(tc.sessionId);
+    printToolCall(tc, detailed, session?.model);
   }
 
   // Stats summary
