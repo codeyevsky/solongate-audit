@@ -128,6 +128,68 @@ Exit code `0` if score >= 7/10, exit code `1` otherwise.
 
 Score = sum / 10 (integer).
 
+## Install
+
+```bash
+# Run directly (no install needed)
+npx solongate-audit
+
+# Or install globally
+npm install -g solongate-audit
+solongate-audit
+
+# Or add to a project
+npm install --save-dev solongate-audit
+```
+
+Requires Node.js >= 18.
+
+## Contributing
+
+```bash
+# Clone the repo
+git clone https://github.com/solongate/solongate-audit.git
+cd solongate-audit
+
+# Install dependencies
+npm install
+
+# Run in dev mode
+npm run dev
+
+# Build
+npm run build
+
+# Test locally
+node dist/index.js
+node dist/index.js --export html
+```
+
+### Project structure
+
+```
+src/
+  index.ts        CLI entry point, flag parsing
+  collector.ts    Reads logs from Claude, Gemini, OpenClaw
+  analyzer.ts     OWASP Agentic Top 10 checks (ASI01–ASI10)
+  reporter.ts     Terminal output formatting
+  export.ts       JSON, CSV, HTML, PDF export
+  config.ts       Custom directory config (~/.solongate-audit/config.json)
+  types.ts        TypeScript types
+  spinner.ts      Loading spinner
+```
+
+### How to contribute
+
+1. Fork the repo
+2. Create a branch (`git checkout -b fix/something`)
+3. Make your changes
+4. Build and test (`npm run build && node dist/index.js`)
+5. Commit and push
+6. Open a Pull Request
+
+Issues and feature requests: [github.com/solongate/solongate-audit/issues](https://github.com/solongate/solongate-audit/issues)
+
 ## Fix issues
 
 Visit [solongate.com](https://solongate.com) for the full security platform.
