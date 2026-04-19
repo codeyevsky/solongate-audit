@@ -185,6 +185,16 @@ export function exportHTML({ data, results }: ExportPayload): string {
 <style>
   :root { --bg: #0c0c0e; --surface: #161618; --surface2: #1e1e21; --border: #2a2a2e; --text: #e8e8ec; --text2: #8b8b96; --accent: #7c8aff; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* Custom scrollbar — thin, dark, auto-hide */
+  *::-webkit-scrollbar { width: 5px; height: 5px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: transparent; border-radius: 4px; transition: background 0.3s; }
+  *:hover::-webkit-scrollbar-thumb { background: #333; }
+  *::-webkit-scrollbar-thumb:hover { background: #555; }
+  *::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+  * { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  *:hover { scrollbar-color: #333 transparent; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; -webkit-font-smoothing: antialiased; }
   .wrap { max-width: 1360px; margin: 0 auto; padding: 48px 40px 80px; }
 
@@ -276,6 +286,20 @@ export function exportHTML({ data, results }: ExportPayload): string {
   .date-sep { background: var(--surface2); }
   .date-sep td { padding: 6px 14px; font-size: 11px; font-weight: 600; color: var(--text2); letter-spacing: 0.5px; border: none; }
 
+  /* Skeleton loading */
+  .skel-row td { padding: 12px 14px; }
+  .skel-bar { height: 12px; border-radius: 4px; background: var(--surface2); position: relative; overflow: hidden; }
+  .skel-bar::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent); animation: shimmer 1.8s infinite; }
+  @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+  .skel-w1 { width: 72px; }
+  .skel-w2 { width: 52px; }
+  .skel-w3 { width: 88px; }
+  .skel-w4 { width: 120px; }
+  .skel-w5 { width: 90px; }
+  .skel-w6 { width: 60px; }
+  #lt tbody.loading .log-row { display: none; }
+  #lt tbody.loading .date-sep { display: none; }
+
   /* Footer */
   .ftr { text-align: center; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border); }
   .ftr a { color: var(--text2); text-decoration: none; font-size: 12px; font-weight: 500; transition: color 0.15s; }
@@ -344,7 +368,10 @@ export function exportHTML({ data, results }: ExportPayload): string {
   </div>
   <table id="lt">
     <thead><tr><th>Time</th><th>Source</th><th>Tool</th><th>Arguments</th><th>Result</th><th>Meta</th></tr></thead>
-    <tbody>${toolRows}</tbody>
+    <tbody class="loading">
+      ${Array.from({length: 12}, () => `<tr class="skel-row"><td><div class="skel-bar skel-w1"></div></td><td><div class="skel-bar skel-w2"></div></td><td><div class="skel-bar skel-w3"></div></td><td><div class="skel-bar skel-w4"></div></td><td><div class="skel-bar skel-w5"></div></td><td><div class="skel-bar skel-w6"></div></td></tr>`).join('')}
+      ${toolRows}
+    </tbody>
   </table>
   <div class="pager" id="pager"></div>
 </div>
@@ -448,7 +475,9 @@ export function exportHTML({ data, results }: ExportPayload): string {
     if(c) c.style.strokeDasharray='${Math.round((intScore / 10) * 251)} 251';
   },100)});
 
-  // Initial render
+  // Remove skeleton, show real rows
+  tbody.classList.remove('loading');
+  document.querySelectorAll('.skel-row').forEach(function(r){ r.remove(); });
   render();
 })();
 </script>
