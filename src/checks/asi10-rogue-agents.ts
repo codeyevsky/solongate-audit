@@ -76,11 +76,23 @@ export function checkRogueAgents(data: AuditData): CheckResult {
 
   const totalAnomalies = volumeSpikes + scopeEscalation;
 
+  const sessionCount = data.sessions.length || 1;
+  const anomalyRate = (totalAnomalies / sessionCount * 100).toFixed(0);
+
+  if (totalAnomalies > 0 && totalAnomalies / sessionCount < 0.2) {
+    return {
+      code, title, status: 'PARTIAL', evidence,
+      summary: `${totalAnomalies} anomaly(ies) in ${sessionCount} sessions (${anomalyRate}%) — no kill switch.`,
+      details: 'Some anomalous patterns at low frequency. No CUSUM baselines or kill switch, but current risk is moderate.',
+      recommendation: 'Implement CUSUM behavioral baselines. Add remote kill switch. Add auto-shutdown on anomaly.',
+    };
+  }
+
   if (totalAnomalies > 0) {
     return {
       code, title, status: 'NOT_PROTECTED', evidence,
-      summary: `${totalAnomalies} behavioral anomaly(ies) detected — no kill switch exists.`,
-      details: 'Volume spikes or scope escalation patterns found. No CUSUM baselines to detect drift. No remote kill switch or auto-shutdown. OWASP: "Highest-severity risk in the taxonomy."',
+      summary: `${totalAnomalies} anomaly(ies) in ${sessionCount} sessions (${anomalyRate}%) — no kill switch.`,
+      details: 'Volume spikes or scope escalation patterns found in many sessions. No CUSUM baselines to detect drift. No remote kill switch or auto-shutdown.',
       recommendation: 'Implement CUSUM behavioral baselines. Add remote kill switch. Add auto-shutdown on anomaly.',
     };
   }

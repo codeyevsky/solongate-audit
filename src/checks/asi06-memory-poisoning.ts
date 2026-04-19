@@ -68,10 +68,11 @@ export function checkMemoryPoisoning(data: AuditData): CheckResult {
     };
   }
 
+  // Unscanned results alone is PARTIAL — only actual poisoning is NOT_PROTECTED
   if (unscanResults > 50) {
     return {
-      code, title, status: 'NOT_PROTECTED', evidence,
-      summary: 'Large volume of unscanned tool results — high poisoning surface.',
+      code, title, status: 'PARTIAL', evidence,
+      summary: `${unscanResults} unscanned tool results — no poisoning detected, but no scanning exists.`,
       details: `${unscanResults} tool results with substantial data passed directly to agent context without scanning. No MINJA patterns detected yet, but no scanning exists to catch future attacks.`,
       recommendation: 'Implement response scanning for tool outputs. Add MINJA-informed rules.',
     };

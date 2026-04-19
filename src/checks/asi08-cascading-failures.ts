@@ -87,11 +87,23 @@ export function checkCascadingFailures(data: AuditData): CheckResult {
     };
   }
 
+  const sessionCount = data.sessions.length || 1;
+  const issueRate = (totalIssues / sessionCount * 100).toFixed(0);
+
+  if (totalIssues > 0 && totalIssues / sessionCount < 0.3) {
+    return {
+      code, title, status: 'PARTIAL', evidence,
+      summary: `${totalIssues} failure pattern(s) in ${sessionCount} sessions (${issueRate}%).`,
+      details: 'Some burst patterns or retry storms found at low frequency. No fail-closed design, no circuit breakers.',
+      recommendation: 'Implement fail-closed mode. Add circuit breakers. Add rate limiting.',
+    };
+  }
+
   if (totalIssues > 0) {
     return {
       code, title, status: 'NOT_PROTECTED', evidence,
-      summary: `${totalIssues} cascading failure pattern(s) detected in logs.`,
-      details: 'Burst patterns, retry storms, or error spikes found. No fail-closed design, no circuit breakers, no timeouts. One failure can cascade across the entire system.',
+      summary: `${totalIssues} failure pattern(s) in ${sessionCount} sessions (${issueRate}%).`,
+      details: 'Burst patterns, retry storms, or error spikes found in many sessions. No fail-closed design, no circuit breakers, no timeouts.',
       recommendation: 'Implement fail-closed mode. Add circuit breakers. Add rate limiting. Add timeout enforcement.',
     };
   }

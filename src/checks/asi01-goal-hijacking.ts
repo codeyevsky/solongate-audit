@@ -82,10 +82,13 @@ export function checkGoalHijacking(data: AuditData): CheckResult {
     };
   }
 
-  if (injectionAttempts <= 3) {
+  const total = data.totalToolCalls || 1;
+  const rate = ((injectionAttempts + encodedPayloads) / total * 100).toFixed(2);
+
+  if ((injectionAttempts + encodedPayloads) / total < 0.005) {
     return {
       code, title, status: 'PARTIAL', evidence,
-      summary: `${injectionAttempts} potential injection pattern(s) detected.`,
+      summary: `${injectionAttempts} potential injection pattern(s) in ${total} calls (${rate}%).`,
       details: 'Low-frequency injection patterns found. Could be false positives or minor attempts. Review the flagged calls.',
       recommendation: 'Enable input guard on MCP proxy to block injection patterns before tool execution.',
     };
@@ -93,8 +96,8 @@ export function checkGoalHijacking(data: AuditData): CheckResult {
 
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
-    summary: `${injectionAttempts} prompt injection patterns detected in logs.`,
-    details: 'Multiple injection patterns found in tool arguments or results. Agents may have processed malicious instructions from external content.',
+    summary: `${injectionAttempts} prompt injection patterns in ${total} calls (${rate}%).`,
+    details: 'Injection patterns found in tool arguments or results. Agents may have processed malicious instructions from external content.',
     recommendation: 'Enable input guard + AI Judge for semantic prompt injection analysis.',
   };
 }

@@ -96,9 +96,20 @@ export function checkCodeExecution(data: AuditData): CheckResult {
     };
   }
 
+  const dangerRate = shellCalls > 0 ? (dangerousExec / shellCalls * 100).toFixed(2) : '0';
+
+  if (dangerousExec / (shellCalls || 1) < 0.005) {
+    return {
+      code, title, status: 'PARTIAL', evidence,
+      summary: `${dangerousExec} dangerous pattern(s) in ${shellCalls} shell calls (${dangerRate}%).`,
+      details: 'Very low-frequency dangerous patterns. Likely legitimate usage. No sandbox or human approval.',
+      recommendation: 'Add REVIEW decision for code exec. Add sandbox (Dockerfile). Add input guard.',
+    };
+  }
+
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
-    summary: `${dangerousExec} dangerous code execution pattern(s) in logs.`,
+    summary: `${dangerousExec} dangerous pattern(s) in ${shellCalls} shell calls (${dangerRate}%).`,
     details: 'Agents executed shell commands with dangerous patterns (command chaining, injection, eval). No sandbox, no human approval. Full RCE possible.',
     recommendation: 'Add REVIEW decision for code exec. Add sandbox (Dockerfile). Add input guard + command restrictions.',
   };

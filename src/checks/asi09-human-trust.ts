@@ -77,10 +77,21 @@ export function checkHumanTrust(data: AuditData): CheckResult {
     };
   }
 
+  const impactRate = shellCalls > 0 ? ((deployOps + deleteOps) / shellCalls * 100).toFixed(1) : '0';
+
+  if ((deployOps + deleteOps) / (shellCalls || 1) < 0.1) {
+    return {
+      code, title, status: 'PARTIAL', evidence,
+      summary: `${deployOps + deleteOps} high-impact action(s) in ${shellCalls} shell calls (${impactRate}%).`,
+      details: 'Some deploy/delete operations without approval, but at low frequency relative to total shell usage.',
+      recommendation: 'Implement approval routing for critical actions. Add raw intent display.',
+    };
+  }
+
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
-    summary: `${deployOps + deleteOps} high-impact action(s) executed without human approval.`,
-    details: 'Deployments, deletions, or publishes executed without human review. No approval routing, no raw intent display, no policy-generated explanations. Agents can manipulate framing to gain trust.',
+    summary: `${deployOps + deleteOps} high-impact action(s) in ${shellCalls} shell calls (${impactRate}%).`,
+    details: 'Deployments, deletions, or publishes executed without human review. No approval routing, no raw intent display, no policy-generated explanations.',
     recommendation: 'Implement approval routing for critical actions. Add raw intent display. Ensure policy-generated explanations.',
   };
 }

@@ -76,11 +76,23 @@ export function checkIdentityAbuse(data: AuditData): CheckResult {
     };
   }
 
+  const total = data.totalToolCalls || 1;
+  const privRate = (privEscalation / total * 100).toFixed(2);
+
+  if (issues > 0 && privEscalation / total < 0.05) {
+    return {
+      code, title, status: 'PARTIAL', evidence,
+      summary: `${privEscalation} privilege escalation pattern(s) in ${total} calls (${privRate}%).`,
+      details: `Low-frequency privilege patterns found. May include legitimate admin operations. No principal binding or verified identity.`,
+      recommendation: 'Add principal binding. Enable strict identity mode. Implement per-agent privilege scoping.',
+    };
+  }
+
   if (issues > 0) {
     return {
       code, title, status: 'NOT_PROTECTED', evidence,
-      summary: 'Privilege escalation or identity issues detected in logs.',
-      details: `${privEscalation} privilege escalation pattern(s) found. Multiple agents accessing same resources without separation. No principal binding or verified identity.`,
+      summary: `${privEscalation} privilege escalation pattern(s) in ${total} calls (${privRate}%).`,
+      details: `High-frequency privilege escalation found. Multiple agents accessing same resources without separation. No principal binding or verified identity.`,
       recommendation: 'Add principal binding. Enable strict identity mode. Implement per-agent privilege scoping.',
     };
   }

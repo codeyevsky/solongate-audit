@@ -113,7 +113,7 @@ if (showWatch) {
     console.log(chalk.dim('  ' + '\u2500'.repeat(80)));
 
     for (const tc of last10) {
-      printToolCall(tc);
+      printToolCall(tc, true);
     }
 
     console.log('');
@@ -139,13 +139,14 @@ if (showWatch) {
 
         for (const tc of newCalls) {
           seenIds.add(tc.id + tc.timestamp);
-          printToolCall(tc);
+          printToolCall(tc, true);
         }
 
         // Update summary line
         const { intScore } = calcScore(results);
+        const errorCount = data.sessions.flatMap((s) => s.toolCalls).filter((tc) => tc.isError).length;
         console.log('');
-        console.log(chalk.dim(`  ${data.totalToolCalls} calls | ${data.sessions.length} sessions | Score: ${intScore}/10 | LIVE`));
+        console.log(chalk.dim(`  ${data.totalToolCalls} calls | ${data.sessions.length} sessions | ${errorCount} errors | Score: ${intScore}/10 | LIVE`));
       }
 
       lastToolCount = data.totalToolCalls;

@@ -104,18 +104,21 @@ export function checkToolMisuse(data: AuditData): CheckResult {
     };
   }
 
-  if (totalIssues <= 3 && exfilAttempts === 0) {
+  const total = data.totalToolCalls || 1;
+  const rate = (totalIssues / total * 100).toFixed(2);
+
+  if (totalIssues / total < 0.01 && exfilAttempts === 0) {
     return {
       code, title, status: 'PARTIAL', evidence,
-      summary: `${totalIssues} minor tool misuse pattern(s) detected.`,
-      details: 'Low-frequency misuse patterns. May be legitimate operations. Review flagged calls.',
+      summary: `${totalIssues} tool misuse pattern(s) in ${total} calls (${rate}%).`,
+      details: 'Low-frequency misuse patterns. May be legitimate development operations. Review flagged calls.',
       recommendation: 'Add policy.json with DENY rules for sensitive files and destructive commands.',
     };
   }
 
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
-    summary: `${totalIssues} tool misuse pattern(s) detected in logs.`,
+    summary: `${totalIssues} tool misuse pattern(s) in ${total} calls (${rate}%).`,
     details: 'Agents accessed sensitive files, ran destructive commands, or attempted data exfiltration. No policy enforcement prevented these actions.',
     recommendation: 'Create policy.json with DENY rules. Enforce via MCP proxy with argument constraints.',
   };

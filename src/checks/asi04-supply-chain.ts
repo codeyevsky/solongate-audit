@@ -76,6 +76,15 @@ export function checkSupplyChain(data: AuditData): CheckResult {
     };
   }
 
+  if (totalIssues <= 5) {
+    return {
+      code, title, status: 'PARTIAL', evidence,
+      summary: `${totalIssues} risky package install(s) — low frequency.`,
+      details: 'Some packages installed without pinned versions, but at low frequency. Review and pin specific versions.',
+      recommendation: 'Pin all package versions. Add deny-undeclared-default rule. Add tool allowlist.',
+    };
+  }
+
   return {
     code, title, status: 'NOT_PROTECTED', evidence,
     summary: `${totalIssues} risky package install(s) detected in logs.`,

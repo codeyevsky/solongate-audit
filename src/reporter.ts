@@ -172,7 +172,7 @@ function formatDate(ts: string): string {
   }
 }
 
-export function printToolCall(tc: { toolName: string; arguments: Record<string, unknown>; result?: string; isError?: boolean; timestamp: string; source: string; sessionId: string }): void {
+export function printToolCall(tc: { toolName: string; arguments: Record<string, unknown>; result?: string; isError?: boolean; timestamp: string; source: string; sessionId: string }, detailed: boolean = false): void {
   const color = SOURCE_COLOR[tc.source] || chalk.white;
   const label = SOURCE_LABEL[tc.source] || tc.source;
   const time = formatTime(tc.timestamp);
@@ -187,26 +187,36 @@ export function printToolCall(tc: { toolName: string; arguments: Record<string, 
   else if (args.pattern) argSummary = String(args.pattern);
   else if (args.url) argSummary = String(args.url);
   else if (args.query) argSummary = String(args.query);
+  else if (args.old_string) argSummary = `"${String(args.old_string).slice(0, 30)}" → "${String(args.new_string || '').slice(0, 30)}"`;
+  else if (args.content) argSummary = `[${String(args.content).length} chars]`;
   else {
     const keys = Object.keys(args);
     if (keys.length > 0) argSummary = JSON.stringify(args);
   }
-  argSummary = truncate(argSummary.replace(/[\n\r]/g, ' '), 60);
+  argSummary = truncate(argSummary.replace(/[\n\r]/g, ' '), 70);
 
   const errorMark = tc.isError ? chalk.red(' ERR') : '';
-  const resultLen = tc.result ? chalk.dim(` (${tc.result.length}ch)`) : '';
 
   console.log(
-    `  ${chalk.dim(time)} ${color(label.padEnd(6))} ${chalk.white(tool.padEnd(17))} ${chalk.dim(argSummary)}${errorMark}${resultLen}`
+    `  ${chalk.dim(time)} ${color(label.padEnd(6))} ${chalk.white(tool.padEnd(17))} ${chalk.dim(argSummary)}${errorMark}`
   );
+
+  // Show result preview in detailed mode
+  if (detailed && tc.result) {
+    const resultPreview = tc.result.replace(/[\n\r]+/g, ' ').trim();
+    if (resultPreview.length > 0) {
+      const icon = tc.isError ? chalk.red('\u2718') : chalk.green('\u2714');
+      console.log(`  ${' '.repeat(9)}${icon} ${chalk.dim(truncate(resultPreview, 80))}`);
+    }
+  }
 }
 
-export function printLogs(data: AuditData, limit: number = 50): void {
+export function printLogs(data: AuditData, limit: number = 50, detailed: boolean = true): void {
   console.log('');
   console.log(chalk.bold('  Recent Tool Calls'));
-  console.log(chalk.dim('  ' + '\u2500'.repeat(80)));
+  console.log(chalk.dim('  ' + '\u2500'.repeat(90)));
   console.log(chalk.dim('  Time     Source Tool              Arguments'));
-  console.log(chalk.dim('  ' + '\u2500'.repeat(80)));
+  console.log(chalk.dim('  ' + '\u2500'.repeat(90)));
 
   const allCalls = data.sessions
     .flatMap((s) => s.toolCalls)
@@ -221,10 +231,17 @@ export function printLogs(data: AuditData, limit: number = 50): void {
       lastDate = date;
       console.log(chalk.dim(`\n  \u2500\u2500 ${date} \u2500\u2500`));
     }
-    printToolCall(tc);
+    printToolCall(tc, detailed);
   }
+
+  // Stats summary
+  const errorCount = recent.filter((tc) => tc.isError).length;
+  const sources = [...new Set(recent.map((tc) => tc.source))];
 
   console.log('');
   console.log(chalk.dim(`  Showing last ${recent.length} of ${allCalls.length} total tool calls`));
+  if (errorCount > 0) {
+    console.log(chalk.dim(`  ${errorCount} error(s) in view | Sources: ${sources.join(', ')}`));
+  }
   console.log('');
 }
