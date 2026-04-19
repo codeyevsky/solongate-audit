@@ -117,9 +117,10 @@ function collectGemini(): SessionInfo[] {
             toolCalls.push({
               id: tc.id || '',
               toolName: tc.name || '',
-              arguments: tc.arguments || {},
+              arguments: tc.args || tc.arguments || {},
               result: tc.result ? JSON.stringify(tc.result).slice(0, 2000) : undefined,
-              timestamp: msg.timestamp || data.startTime || '',
+              isError: tc.status === 'error',
+              timestamp: tc.timestamp || msg.timestamp || data.startTime || '',
               source: 'gemini',
               sessionId,
             });
@@ -327,7 +328,7 @@ function collectCustomDirs(): SessionInfo[] {
             for (const msg of data.messages) {
               if (!msg.toolCalls || !Array.isArray(msg.toolCalls)) continue;
               for (const tc of msg.toolCalls) {
-                toolCalls.push({ id: tc.id || '', toolName: tc.name || '', arguments: tc.arguments || {}, result: tc.result ? JSON.stringify(tc.result).slice(0, 2000) : undefined, timestamp: msg.timestamp || data.startTime || '', source: 'gemini', sessionId });
+                toolCalls.push({ id: tc.id || '', toolName: tc.name || '', arguments: tc.args || tc.arguments || {}, result: tc.result ? JSON.stringify(tc.result).slice(0, 2000) : undefined, isError: tc.status === 'error', timestamp: tc.timestamp || msg.timestamp || data.startTime || '', source: 'gemini', sessionId });
               }
             }
 
