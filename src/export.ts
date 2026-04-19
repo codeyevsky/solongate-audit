@@ -106,20 +106,6 @@ function escapeHTML(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function extractArgSummaryHTML(args: Record<string, unknown>): string {
-  if (args.command) return escapeHTML(String(args.command));
-  if (args.file_path) return escapeHTML(String(args.file_path));
-  if (args.path) return escapeHTML(String(args.path));
-  if (args.pattern) return escapeHTML(String(args.pattern));
-  if (args.url) return escapeHTML(String(args.url));
-  if (args.query) return escapeHTML(String(args.query));
-  if (args.old_string) return `<span style="color:#f87171">"${escapeHTML(String(args.old_string).slice(0, 60))}"</span> &rarr; <span style="color:#4ade80">"${escapeHTML(String(args.new_string || '').slice(0, 60))}"</span>`;
-  if (args.content) return `<span style="color:#888">[${String(args.content).length} chars]</span>`;
-  const keys = Object.keys(args);
-  if (keys.length > 0) return escapeHTML(JSON.stringify(args).slice(0, 120));
-  return '<span style="color:#555">-</span>';
-}
-
 export function exportHTML({ data, results }: ExportPayload): string {
   const { intScore, fixCount } = calcScore(results);
   const allCalls = data.sessions
@@ -161,13 +147,10 @@ export function exportHTML({ data, results }: ExportPayload): string {
         <td class="det">${r.recommendation ? escapeHTML(r.recommendation) : ''}</td>
       </tr>`).join('');
 
-  // Keys that are already shown in the summary — no need to repeat in accordion
-  const SUMMARY_KEYS = new Set(['command', 'description', 'timeout', 'run_in_background', 'file_path', 'path', 'pattern', 'url', 'query', 'old_string', 'new_string', 'content', 'replace_all']);
-
   const toolRows = allCalls.map((tc) => {
     const session = sessionMap.get(tc.sessionId);
-    const argSummary = extractArgSummaryHTML(tc.arguments);
     const argFull = escapeHTML(JSON.stringify(tc.arguments, null, 2));
+    const hasArgs = argFull !== '{}';
     const resStr = escapeHTML((tc.result || '').slice(0, 500));
     const src = tc.source;
     const srcClass = 'src-' + src;
@@ -175,16 +158,12 @@ export function exportHTML({ data, results }: ExportPayload): string {
     const dateShort = tc.timestamp ? new Date(tc.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : '';
     const dateFull = tc.timestamp ? new Date(tc.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
-    // Show accordion only if args have extra keys beyond what summary already shows
-    const argKeys = Object.keys(tc.arguments);
-    const hasExtraArgs = argKeys.length > 0 && argFull !== '{}' && argKeys.some((k) => !SUMMARY_KEYS.has(k));
-
     return `
       <tr class="log-row ${tc.isError ? 'err-row' : ''}" data-source="${src}" data-date="${dateFull}">
         <td class="ts"><span class="d">${dateShort}</span> ${time}</td>
         <td><span class="src-tag ${srcClass}">${sourceLabel[src] || src}</span></td>
         <td class="tool">${escapeHTML(tc.toolName)}${tc.isError ? '<span class="err-tag">ERR</span>' : ''}</td>
-        <td class="args">${argSummary}${hasExtraArgs ? `<div class="acc"><span class="acc-toggle">json</span><div class="acc-body"><div><pre>${argFull}</pre></div></div></div>` : ''}</td>
+        <td class="args">${hasArgs ? `<div class="acc"><span class="acc-toggle">args</span><div class="acc-body"><div><pre>${argFull}</pre></div></div></div>` : '<span style="color:#2a2a2e">&mdash;</span>'}</td>
         <td>${resStr ? `<div class="acc"><span class="acc-toggle">${tc.isError ? '<span style="color:#f87171">error</span>' : 'result'}</span><div class="acc-body"><div><pre>${resStr}</pre></div></div></div>` : '<span style="color:#2a2a2e">&mdash;</span>'}</td>
         <td class="meta">${escapeHTML(tc.id.slice(0, 8))}<br>${escapeHTML(session?.model || '-')}</td>
       </tr>`;
