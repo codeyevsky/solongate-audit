@@ -83,10 +83,33 @@ Custom directories are saved in `~/.solongate-audit/config.json` and persist acr
 ```bash
 npx solongate-audit                     # Compact report
 npx solongate-audit --detailed          # Detailed analysis per category
-npx solongate-audit --watch             # Live monitoring (updates every 3s)
+npx solongate-audit --logs              # Show last 50 tool calls (detailed)
+npx solongate-audit --logs 100          # Show last N tool calls
+npx solongate-audit --watch             # Live monitoring (updates every 2s)
 npx solongate-audit --json              # JSON output for CI
 npx solongate-audit --help              # Show all options
 ```
+
+## Export
+
+Generate report files in multiple formats:
+
+```bash
+npx solongate-audit --export json       # Full report as JSON
+npx solongate-audit --export csv        # Tool calls as CSV (Excel-compatible)
+npx solongate-audit --export html       # Visual HTML report (dark theme, filterable)
+npx solongate-audit --export pdf        # PDF-ready HTML (open in browser → Print → Save as PDF)
+npx solongate-audit --export all        # All formats at once
+```
+
+### What each format includes
+
+| Format | Content |
+|--------|---------|
+| **JSON** | Sessions, tool calls, audit results, score, metadata |
+| **CSV** | One row per tool call: timestamp, source, session, model, tool call ID, tool name, arguments, result, error status |
+| **HTML** | Branded visual report with score card, audit table, filterable/searchable tool call log, expandable arguments & results |
+| **PDF** | Same HTML with print CSS (`@page` A4 landscape) — click "Export PDF" button or Ctrl+P |
 
 ## CI integration
 
