@@ -124,7 +124,7 @@ export function exportHTML({ data, results }: ExportPayload): string {
   const { intScore, fixCount } = calcScore(results);
   const allCalls = data.sessions
     .flatMap((s) => s.toolCalls)
-    .sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+    .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
   const sessionMap = new Map(data.sessions.map((s) => [s.id, s]));
   const errorCount = allCalls.filter((tc) => tc.isError).length;
 
@@ -169,10 +169,11 @@ export function exportHTML({ data, results }: ExportPayload): string {
     const src = tc.source;
     const srcClass = 'src-' + src;
     const time = tc.timestamp ? new Date(tc.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
-    const date = tc.timestamp ? new Date(tc.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : '';
+    const dateShort = tc.timestamp ? new Date(tc.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }) : '';
+    const dateFull = tc.timestamp ? new Date(tc.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
     return `
-      <tr class="${tc.isError ? 'err-row' : ''}" data-source="${src}">
-        <td class="ts"><span class="d">${date}</span> ${time}</td>
+      <tr class="log-row ${tc.isError ? 'err-row' : ''}" data-source="${src}" data-date="${dateFull}">
+        <td class="ts"><span class="d">${dateShort}</span> ${time}</td>
         <td><span class="src-tag ${srcClass}">${sourceLabel[src] || src}</span></td>
         <td class="tool">${escapeHTML(tc.toolName)}${tc.isError ? '<span class="err-tag">ERR</span>' : ''}</td>
         <td class="args">${argSummary}${argFull !== '{}' ? `<div class="acc"><span class="acc-toggle">json</span><div class="acc-body"><div><pre>${argFull}</pre></div></div></div>` : ''}</td>
@@ -275,6 +276,16 @@ export function exportHTML({ data, results }: ExportPayload): string {
   .filters input:focus, .filters select:focus { border-color: var(--accent); }
   .filters input { flex: 1; min-width: 220px; }
 
+  /* Pagination */
+  .pager { display: flex; align-items: center; justify-content: center; gap: 4px; margin-top: 16px; flex-wrap: wrap; }
+  .pager button { background: var(--surface); border: 1px solid var(--border); color: var(--text2); padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+  .pager button:hover { background: var(--surface2); color: var(--text); }
+  .pager button.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
+  .pager button:disabled { opacity: 0.3; cursor: default; }
+  .pager .pager-info { font-size: 11px; color: var(--text2); margin: 0 8px; }
+  .date-sep { background: var(--surface2); }
+  .date-sep td { padding: 6px 14px; font-size: 11px; font-weight: 600; color: var(--text2); letter-spacing: 0.5px; border: none; }
+
   /* Footer */
   .ftr { text-align: center; margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border); }
   .ftr a { color: var(--text2); text-decoration: none; font-size: 12px; font-weight: 500; transition: color 0.15s; }
@@ -336,14 +347,16 @@ export function exportHTML({ data, results }: ExportPayload): string {
 <div class="sec">
   <div class="sec-hdr">Tool Calls <span class="sec-count">${allCalls.length.toLocaleString()}</span></div>
   <div class="filters">
-    <input type="text" id="q" placeholder="Search..." oninput="ft()">
-    <select id="sf" onchange="ft()"><option value="">All sources</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="openclaw">OpenClaw</option></select>
-    <select id="ef" onchange="ft()"><option value="">All</option><option value="e">Errors</option><option value="s">Success</option></select>
+    <input type="text" id="q" placeholder="Search..." oninput="applyFilters()">
+    <select id="sf" onchange="applyFilters()"><option value="">All sources</option><option value="claude">Claude</option><option value="gemini">Gemini</option><option value="openclaw">OpenClaw</option></select>
+    <select id="ef" onchange="applyFilters()"><option value="">All</option><option value="e">Errors</option><option value="s">Success</option></select>
+    <select id="df" onchange="applyFilters()"><option value="">All dates</option></select>
   </div>
   <table id="lt">
     <thead><tr><th>Time</th><th>Source</th><th>Tool</th><th>Arguments</th><th>Result</th><th>Meta</th></tr></thead>
     <tbody>${toolRows}</tbody>
   </table>
+  <div class="pager" id="pager"></div>
 </div>
 
 <div class="ftr">
@@ -353,27 +366,101 @@ export function exportHTML({ data, results }: ExportPayload): string {
 
 </div>
 <script>
-document.addEventListener('click',function(e){
-  var t=e.target.closest('.acc-toggle');
-  if(t){var a=t.closest('.acc');a.classList.toggle('open');}
-});
-function ft(){
-  var q=document.getElementById('q').value.toLowerCase();
-  var s=document.getElementById('sf').value;
-  var ef=document.getElementById('ef').value;
-  document.querySelectorAll('#lt tbody tr').forEach(function(r){
-    var txt=r.textContent.toLowerCase();
-    var src=r.getAttribute('data-source')||'';
-    var err=r.classList.contains('err-row');
-    var ok=(!q||txt.indexOf(q)!==-1)&&(!s||src===s)&&(!ef||(ef==='e'&&err)||(ef==='s'&&!err));
-    r.style.display=ok?'':'none';
+(function(){
+  var PER_PAGE = 100;
+  var page = 1;
+  var allRows = Array.from(document.querySelectorAll('#lt tbody tr.log-row'));
+  var filtered = allRows.slice();
+  var tbody = document.querySelector('#lt tbody');
+
+  // Populate date dropdown
+  var dates = [];
+  var seen = {};
+  allRows.forEach(function(r){
+    var d = r.getAttribute('data-date');
+    if(d && !seen[d]){ seen[d]=1; dates.push(d); }
   });
-}
-// Animate score ring on load
-requestAnimationFrame(function(){setTimeout(function(){
-  var c=document.querySelector('.ring .fill');
-  if(c) c.style.strokeDasharray='${Math.round((intScore / 10) * 251)} 251';
-},100)});
+  var df = document.getElementById('df');
+  dates.forEach(function(d){
+    var o = document.createElement('option');
+    o.value = d; o.textContent = d;
+    df.appendChild(o);
+  });
+
+  // Accordion
+  document.addEventListener('click',function(e){
+    var t=e.target.closest('.acc-toggle');
+    if(t){t.closest('.acc').classList.toggle('open');}
+  });
+
+  function applyFilters(){
+    var q = document.getElementById('q').value.toLowerCase();
+    var s = document.getElementById('sf').value;
+    var ef = document.getElementById('ef').value;
+    var dv = document.getElementById('df').value;
+    filtered = allRows.filter(function(r){
+      var txt = r.textContent.toLowerCase();
+      var src = r.getAttribute('data-source')||'';
+      var dt = r.getAttribute('data-date')||'';
+      var err = r.classList.contains('err-row');
+      return (!q||txt.indexOf(q)!==-1)&&(!s||src===s)&&(!dv||dt===dv)&&(!ef||(ef==='e'&&err)||(ef==='s'&&!err));
+    });
+    page = 1;
+    render();
+  }
+  window.applyFilters = applyFilters;
+
+  function render(){
+    var total = filtered.length;
+    var pages = Math.max(1, Math.ceil(total / PER_PAGE));
+    if(page > pages) page = pages;
+    var start = (page-1)*PER_PAGE;
+    var end = Math.min(start+PER_PAGE, total);
+    var slice = filtered.slice(start, end);
+
+    // Clear tbody and insert date-grouped rows
+    tbody.innerHTML = '';
+    var lastDate = '';
+    slice.forEach(function(r){
+      var d = r.getAttribute('data-date')||'';
+      if(d && d !== lastDate){
+        lastDate = d;
+        var sep = document.createElement('tr');
+        sep.className = 'date-sep';
+        sep.innerHTML = '<td colspan="6">' + d + '</td>';
+        tbody.appendChild(sep);
+      }
+      tbody.appendChild(r);
+    });
+
+    // Pagination controls
+    var pager = document.getElementById('pager');
+    var html = '';
+    html += '<button '+(page<=1?'disabled':'')+' onclick="pg('+(page-1)+')">&lsaquo;</button>';
+    var s = Math.max(1, page-3), e = Math.min(pages, page+3);
+    if(s > 1) html += '<button onclick="pg(1)">1</button>';
+    if(s > 2) html += '<span class="pager-info">&hellip;</span>';
+    for(var i=s;i<=e;i++){
+      html += '<button class="'+(i===page?'active':'')+'" onclick="pg('+i+')">'+i+'</button>';
+    }
+    if(e < pages-1) html += '<span class="pager-info">&hellip;</span>';
+    if(e < pages) html += '<button onclick="pg('+pages+')">'+pages+'</button>';
+    html += '<button '+(page>=pages?'disabled':'')+' onclick="pg('+(page+1)+')">&rsaquo;</button>';
+    html += '<span class="pager-info">' + (start+1) + '&ndash;' + end + ' of ' + total + '</span>';
+    pager.innerHTML = html;
+  }
+
+  window.pg = function(p){ page=p; render(); window.scrollTo({top:document.getElementById('lt').offsetTop-80,behavior:'smooth'}); };
+
+  // Score ring animation
+  requestAnimationFrame(function(){setTimeout(function(){
+    var c=document.querySelector('.ring .fill');
+    if(c) c.style.strokeDasharray='${Math.round((intScore / 10) * 251)} 251';
+  },100)});
+
+  // Initial render
+  render();
+})();
 </script>
 </body>
 </html>`;
