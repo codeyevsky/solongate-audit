@@ -1,9 +1,9 @@
-import type { AuditData, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence, DeepAnalysis } from '../types.js';
 
 // OWASP ASI03: Identity and Privilege Abuse
 // Analyze logs for agent identity issues — multiple agents, no identity tracking, privilege mixing.
 
-export function checkIdentityAbuse(data: AuditData): CheckResult {
+export function checkIdentityAbuse(data: AuditData, deep?: DeepAnalysis): CheckResult {
   const code = 'ASI03';
   const title = 'Identity Abuse';
   const evidence: Evidence[] = [];
@@ -59,6 +59,20 @@ export function checkIdentityAbuse(data: AuditData): CheckResult {
 
   if (privEscalation > 0) {
     evidence.push({ icon: 'warn', text: `${privEscalation} potential privilege escalation attempt(s) in logs` });
+  }
+
+  // Deep: credential flow tracking
+  if (deep) {
+    const credFlows = deep.dataFlowLeaks.filter((l) =>
+      ['api_key', 'bearer_token', 'aws_key', 'private_key', 'password', 'openai_api_key', 'stripe_key', 'github_pat'].includes(l.dataType)
+    );
+    if (credFlows.length > 0) {
+      evidence.push({ icon: 'warn', text: `${credFlows.length} credential(s) flowed through tool calls without identity verification` });
+      for (const cf of credFlows.slice(0, 3)) {
+        evidence.push({ icon: 'warn', text: `  ${cf.sourceToolName} (${cf.dataType}) \u2192 ${cf.sinkToolName}` });
+      }
+      privEscalation += credFlows.length;
+    }
   }
 
   // No principal binding check

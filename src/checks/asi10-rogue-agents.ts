@@ -1,9 +1,9 @@
-import type { AuditData, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence, DeepAnalysis } from '../types.js';
 
 // OWASP ASI10: Rogue Agents
 // Analyze logs for behavioral drift — sustained pattern changes, scope escalation, anomalous volumes.
 
-export function checkRogueAgents(data: AuditData): CheckResult {
+export function checkRogueAgents(data: AuditData, deep?: DeepAnalysis): CheckResult {
   const code = 'ASI10';
   const title = 'Rogue Agents';
   const evidence: Evidence[] = [];
@@ -68,10 +68,42 @@ export function checkRogueAgents(data: AuditData): CheckResult {
     evidence.push({ icon: 'warn', text: `${unusualTools} unusual tool usage pattern(s) (tools only used in one session)` });
   }
 
-  evidence.push({ icon: 'missing', text: 'No CUSUM behavioral drift detection — no per-agent baselines' });
+  // Deep: permission drift + baseline anomalies (replaces basic detection)
+  if (deep) {
+    // Permission drift
+    if (deep.permissionDrifts.length > 0) {
+      scopeEscalation = Math.max(scopeEscalation, deep.permissionDrifts.length);
+      for (const drift of deep.permissionDrifts.slice(0, 3)) {
+        evidence.push({ icon: 'warn', text:
+          `Session ${drift.sessionId.slice(0, 8)}: privilege drift ${drift.driftRatio.toFixed(1)}x ` +
+          `(level ${drift.earlyPrivilegeLevel.toFixed(1)} \u2192 ${drift.latePrivilegeLevel.toFixed(1)})` +
+          (drift.newToolTypes.length > 0 ? ` | new: ${drift.newToolTypes.join(', ')}` : ''),
+        });
+      }
+    }
+
+    // Baseline anomalies
+    if (deep.anomalies.length > 0) {
+      volumeSpikes = Math.max(volumeSpikes, deep.anomalies.length);
+      evidence.push({ icon: 'warn', text: `${deep.anomalies.length} session(s) deviate >2 stddev from behavioral baseline` });
+      for (const a of deep.anomalies.slice(0, 3)) {
+        evidence.push({ icon: 'warn', text: `  ${a.sessionId.slice(0, 8)}: ${a.deviations[0]}` });
+      }
+    }
+
+    // Baseline stats
+    const allBaseline = deep.baselines.find((b) => b.source === 'all');
+    if (allBaseline) {
+      const dist = Object.entries(allBaseline.toolTypeDistribution)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k}:${v.toFixed(0)}%`)
+        .join(', ');
+      evidence.push({ icon: 'info', text: `Baseline: avg ${Math.round(allBaseline.avgToolCalls)} calls/session | ${dist}` });
+    }
+  }
+
   evidence.push({ icon: 'missing', text: 'No remote kill switch — cannot instantly stop a rogue agent' });
   evidence.push({ icon: 'missing', text: 'No auto-shutdown on anomalous behavior' });
-  evidence.push({ icon: 'missing', text: 'No drift thresholds (denyRateIncrease: 2.0x, actionVolumeSpike: 3.0x)' });
   evidence.push({ icon: 'missing', text: 'No scope boundaries — agents can self-escalate' });
 
   const totalAnomalies = volumeSpikes + scopeEscalation;

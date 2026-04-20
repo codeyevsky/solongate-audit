@@ -1,4 +1,4 @@
-import type { AuditData, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence, DeepAnalysis } from '../types.js';
 
 // OWASP ASI02: Tool Misuse and Exploitation
 // Analyze logs for dangerous tool usage — sensitive file access, destructive commands, data exfiltration.
@@ -24,7 +24,7 @@ const EXFIL_PATTERNS = [
 ];
 const WILDCARD_QUERIES = ['SELECT *', 'WHERE 1=1', 'WHERE true', 'OR 1=1'];
 
-export function checkToolMisuse(data: AuditData): CheckResult {
+export function checkToolMisuse(data: AuditData, deep?: DeepAnalysis): CheckResult {
   const code = 'ASI02';
   const title = 'Tool Misuse';
   const evidence: Evidence[] = [];
@@ -78,6 +78,23 @@ export function checkToolMisuse(data: AuditData): CheckResult {
           if (flagged.length < 5) flagged.push(`${tc.toolName}: wildcard query "${wq}"`);
           break;
         }
+      }
+    }
+  }
+
+  // Deep: exfiltration chains + data flow leaks
+  if (deep) {
+    const exfilChains = deep.chains.filter((c) => c.chainName === 'credential-exfiltration');
+    if (exfilChains.length > 0) {
+      exfilAttempts += exfilChains.length;
+      flagged.push(...exfilChains.slice(0, 2).map((c) =>
+        `Chain: ${c.steps.map((s) => s.toolName).join(' \u2192 ')} (${c.description})`
+      ));
+    }
+    if (deep.dataFlowLeaks.length > 0) {
+      exfilAttempts += deep.dataFlowLeaks.length;
+      for (const leak of deep.dataFlowLeaks.slice(0, 3)) {
+        flagged.push(`Data flow: ${leak.sourceToolName} (${leak.dataType}) \u2192 ${leak.sinkToolName}`);
       }
     }
   }

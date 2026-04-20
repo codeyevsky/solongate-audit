@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
-import type { ToolCall, SessionInfo, AuditData } from './types.js';
+import type { ToolCall, SessionInfo, AuditData, UserMessage } from './types.js';
 import { loadConfig } from './config.js';
 
 // ── Claude Code logs ──
@@ -24,6 +24,7 @@ function collectClaude(): SessionInfo[] {
       try {
         const lines = readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
         const toolCalls: ToolCall[] = [];
+        const userMessages: UserMessage[] = [];
         let startTime = '';
         let endTime = '';
         let model = '';
@@ -56,9 +57,14 @@ function collectClaude(): SessionInfo[] {
               if (entry.message?.model) model = entry.message.model;
             }
 
-            // Tool result — Claude puts tool_result blocks inside type: "user" entries
+            // User messages + tool results — Claude puts both inside type: "user"
             if (entry.type === 'user') {
               const content = entry.message?.content;
+              // Plain string = actual user message
+              if (typeof content === 'string' && content.length > 0) {
+                userMessages.push({ timestamp: entry.timestamp, text: content.slice(0, 500) });
+              }
+              // Array = tool results
               if (Array.isArray(content)) {
                 for (const block of content) {
                   if (block.type === 'tool_result') {
@@ -79,8 +85,15 @@ function collectClaude(): SessionInfo[] {
           } catch {}
         }
 
+        // Correlate user messages with next tool call
+        for (const um of userMessages) {
+          const umTime = new Date(um.timestamp).getTime();
+          const nextIdx = toolCalls.findIndex((tc) => new Date(tc.timestamp).getTime() > umTime);
+          if (nextIdx >= 0) um.nextToolCallIndex = nextIdx;
+        }
+
         if (toolCalls.length > 0) {
-          sessions.push({ id: sessionId, source: 'claude', startTime, endTime, model, toolCalls, filePath });
+          sessions.push({ id: sessionId, source: 'claude', startTime, endTime, model, toolCalls, userMessages, filePath });
         }
       } catch {}
     }
@@ -108,9 +121,18 @@ function collectGemini(): SessionInfo[] {
       try {
         const data = JSON.parse(readFileSync(filePath, 'utf-8'));
         const toolCalls: ToolCall[] = [];
+        const userMessages: UserMessage[] = [];
         const sessionId = data.sessionId || file.replace('.json', '');
 
         for (const msg of data.messages || []) {
+          // User messages
+          if (msg.role === 'user' && (msg.text || msg.content)) {
+            const text = String(msg.text || msg.content).slice(0, 500);
+            if (text.length > 0) {
+              userMessages.push({ timestamp: msg.timestamp || data.startTime || '', text });
+            }
+          }
+
           if (!msg.toolCalls || !Array.isArray(msg.toolCalls)) continue;
 
           for (const tc of msg.toolCalls) {
@@ -127,6 +149,13 @@ function collectGemini(): SessionInfo[] {
           }
         }
 
+        // Correlate user messages with next tool call
+        for (const um of userMessages) {
+          const umTime = new Date(um.timestamp).getTime();
+          const nextIdx = toolCalls.findIndex((tc) => new Date(tc.timestamp).getTime() > umTime);
+          if (nextIdx >= 0) um.nextToolCallIndex = nextIdx;
+        }
+
         if (toolCalls.length > 0) {
           sessions.push({
             id: sessionId,
@@ -135,6 +164,7 @@ function collectGemini(): SessionInfo[] {
             endTime: data.lastUpdated || '',
             model: data.messages?.[0]?.model || '',
             toolCalls,
+            userMessages,
             filePath,
           });
         }
@@ -161,6 +191,7 @@ function collectOpenClaw(): SessionInfo[] {
     try {
       const lines = readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
       const toolCalls: ToolCall[] = [];
+      const userMessages: UserMessage[] = [];
       let startTime = '';
       let endTime = '';
       let model = '';
@@ -177,7 +208,15 @@ function collectOpenClaw(): SessionInfo[] {
             model = entry.modelId || '';
           }
 
-          // Tool use from assistant — OpenClaw uses type: "toolCall" with "arguments" (not "tool_use"/"input")
+          // User messages
+          if (entry.type === 'message' && entry.message?.role === 'user') {
+            const content = entry.message.content;
+            if (typeof content === 'string' && content.length > 0) {
+              userMessages.push({ timestamp: entry.timestamp, text: content.slice(0, 500) });
+            }
+          }
+
+          // Tool use from assistant
           if (entry.type === 'message' && entry.message?.role === 'assistant') {
             const content = entry.message.content;
             if (Array.isArray(content)) {
@@ -210,8 +249,15 @@ function collectOpenClaw(): SessionInfo[] {
         } catch {}
       }
 
+      // Correlate user messages with next tool call
+      for (const um of userMessages) {
+        const umTime = new Date(um.timestamp).getTime();
+        const nextIdx = toolCalls.findIndex((tc) => new Date(tc.timestamp).getTime() > umTime);
+        if (nextIdx >= 0) um.nextToolCallIndex = nextIdx;
+      }
+
       if (toolCalls.length > 0) {
-        sessions.push({ id: sessionId, source: 'openclaw', startTime, endTime, model, toolCalls, filePath });
+        sessions.push({ id: sessionId, source: 'openclaw', startTime, endTime, model, toolCalls, userMessages, filePath });
       }
     } catch {}
   }

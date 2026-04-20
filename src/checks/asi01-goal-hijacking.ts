@@ -1,4 +1,4 @@
-import type { AuditData, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence, DeepAnalysis } from '../types.js';
 
 // OWASP ASI01: Agent Goal Hijacking
 // Analyze logs for signs of prompt injection in tool arguments and results.
@@ -16,7 +16,7 @@ const INJECTION_PATTERNS = [
   /disregard\s+(all|any|your)\s+(previous|prior|original)/i,
 ];
 
-export function checkGoalHijacking(data: AuditData): CheckResult {
+export function checkGoalHijacking(data: AuditData, deep?: DeepAnalysis): CheckResult {
   const code = 'ASI01';
   const title = 'Goal Hijacking';
   const evidence: Evidence[] = [];
@@ -72,6 +72,20 @@ export function checkGoalHijacking(data: AuditData): CheckResult {
   }
   if (encodedPayloads > 0) {
     evidence.push({ icon: 'warn', text: `${encodedPayloads} tool result(s) contain encoded payloads (potential obfuscated injection)` });
+  }
+
+  // Deep: chain-based hijacking detection
+  if (deep) {
+    const hijackChains = deep.chains.filter((c) =>
+      c.chainName === 'cross-contamination' || c.chainName === 'read-exec-chain'
+    );
+    if (hijackChains.length > 0) {
+      evidence.push({ icon: 'warn', text: `${hijackChains.length} hijacking chain(s): file content flowing into execution` });
+      for (const chain of hijackChains.slice(0, 3)) {
+        evidence.push({ icon: 'warn', text: `  ${chain.steps.map((s) => s.toolName).join(' \u2192 ')} (${chain.description})` });
+      }
+      injectionAttempts += hijackChains.length;
+    }
   }
 
   if (injectionAttempts === 0 && encodedPayloads === 0) {

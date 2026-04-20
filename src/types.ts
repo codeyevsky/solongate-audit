@@ -27,6 +27,12 @@ export interface ToolCall {
   sessionId: string;
 }
 
+export interface UserMessage {
+  timestamp: string;
+  text: string;
+  nextToolCallIndex?: number;
+}
+
 export interface SessionInfo {
   id: string;
   source: 'claude' | 'gemini' | 'openclaw';
@@ -34,6 +40,7 @@ export interface SessionInfo {
   endTime?: string;
   model?: string;
   toolCalls: ToolCall[];
+  userMessages?: UserMessage[];
   filePath: string;
 }
 
@@ -42,4 +49,66 @@ export interface AuditData {
   totalToolCalls: number;
   sources: string[];  // which AI tools were found
   timeRange: { from: string; to: string } | null;
+}
+
+// ── Deep Analysis Types ──
+
+export interface ChainMatch {
+  chainName: string;
+  sessionId: string;
+  steps: { index: number; toolName: string; summary: string }[];
+  severity: 'high' | 'medium' | 'low';
+  description: string;
+}
+
+export interface DataFlowLeak {
+  sessionId: string;
+  sourceIndex: number;
+  sinkIndex: number;
+  sourceToolName: string;
+  sinkToolName: string;
+  dataType: string;
+  pattern: string;
+}
+
+export interface PermissionDrift {
+  sessionId: string;
+  earlyPrivilegeLevel: number;
+  latePrivilegeLevel: number;
+  driftRatio: number;
+  newToolTypes: string[];
+}
+
+export interface SessionBaseline {
+  source: 'claude' | 'gemini' | 'openclaw' | 'all';
+  avgToolCalls: number;
+  stddevToolCalls: number;
+  toolTypeDistribution: Record<string, number>;
+  avgDurationMs: number;
+  stddevDurationMs: number;
+}
+
+export interface SessionAnomaly {
+  sessionId: string;
+  source: string;
+  deviations: string[];
+  severity: 'high' | 'medium' | 'low';
+}
+
+export interface UnsolicitedAction {
+  sessionId: string;
+  toolCallIndex: number;
+  toolName: string;
+  action: string;
+  lastUserMessageBefore?: string;
+  timeSinceLastUserMessage?: number;
+}
+
+export interface DeepAnalysis {
+  chains: ChainMatch[];
+  dataFlowLeaks: DataFlowLeak[];
+  permissionDrifts: PermissionDrift[];
+  baselines: SessionBaseline[];
+  anomalies: SessionAnomaly[];
+  unsolicitedActions: UnsolicitedAction[];
 }

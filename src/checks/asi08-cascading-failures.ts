@@ -1,9 +1,9 @@
-import type { AuditData, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence, DeepAnalysis } from '../types.js';
 
 // OWASP ASI08: Cascading Failures
 // Analyze logs for failure patterns — error spikes, retry storms, rapid-fire calls.
 
-export function checkCascadingFailures(data: AuditData): CheckResult {
+export function checkCascadingFailures(data: AuditData, deep?: DeepAnalysis): CheckResult {
   const code = 'ASI08';
   const title = 'Cascading Failures';
   const evidence: Evidence[] = [];
@@ -70,6 +70,20 @@ export function checkCascadingFailures(data: AuditData): CheckResult {
   }
   if (errorSpikes > 0) {
     evidence.push({ icon: 'warn', text: `${errorSpikes} error spike(s) detected (5+ errors in <30s)` });
+  }
+
+  // Deep: improved retry storms from chain analysis + baseline anomalies
+  if (deep) {
+    const retryChains = deep.chains.filter((c) => c.chainName === 'retry-storm');
+    if (retryChains.length > retryStorms) retryStorms = retryChains.length;
+
+    const highAnomalies = deep.anomalies.filter((a) => a.severity === 'high');
+    if (highAnomalies.length > 0) {
+      evidence.push({ icon: 'warn', text: `${highAnomalies.length} session(s) with abnormal behavior vs baseline` });
+      for (const a of highAnomalies.slice(0, 3)) {
+        evidence.push({ icon: 'warn', text: `  Session ${a.sessionId.slice(0, 8)}: ${a.deviations[0]}` });
+      }
+    }
   }
 
   evidence.push({ icon: 'missing', text: 'No fail-closed behavior detected in logs' });

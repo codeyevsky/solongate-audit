@@ -1,4 +1,4 @@
-import type { AuditData, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence, DeepAnalysis } from '../types.js';
 
 // OWASP ASI05: Unexpected Code Execution (RCE)
 // Analyze logs for arbitrary code execution — shell commands, eval, script execution.
@@ -17,7 +17,7 @@ const DANGEROUS_PATTERNS = [
   { pattern: /powershell\s+-e(ncodedcommand)?/i, label: 'powershell encoded command' },
 ];
 
-export function checkCodeExecution(data: AuditData): CheckResult {
+export function checkCodeExecution(data: AuditData, deep?: DeepAnalysis): CheckResult {
   const code = 'ASI05';
   const title = 'Code Execution';
   const evidence: Evidence[] = [];
@@ -75,6 +75,20 @@ export function checkCodeExecution(data: AuditData): CheckResult {
     evidence.push({ icon: 'missing', text: 'No sandbox/container execution detected — all commands run on host' });
   } else {
     evidence.push({ icon: 'found', text: 'Some commands executed in container/sandbox environment' });
+  }
+
+  // Deep: execution chain detection
+  if (deep) {
+    const execChains = deep.chains.filter((c) =>
+      c.chainName === 'privilege-escalation-sequence' || c.chainName === 'read-exec-chain'
+    );
+    if (execChains.length > 0) {
+      evidence.push({ icon: 'warn', text: `${execChains.length} execution chain(s): file content flowing into shell commands` });
+      for (const chain of execChains.slice(0, 3)) {
+        evidence.push({ icon: 'warn', text: `  ${chain.steps.map((s) => s.toolName).join(' \u2192 ')}` });
+      }
+      dangerousExec += execChains.length;
+    }
   }
 
   evidence.push({ icon: 'missing', text: 'No REVIEW decision — code execution not routed for human approval' });

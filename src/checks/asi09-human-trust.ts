@@ -1,4 +1,4 @@
-import type { AuditData, CheckResult, Evidence } from '../types.js';
+import type { AuditData, CheckResult, Evidence, DeepAnalysis } from '../types.js';
 
 // OWASP ASI09: Human-Agent Trust Exploitation
 // Analyze logs for actions taken without human approval — critical operations with no review gate.
@@ -7,7 +7,7 @@ import type { AuditData, CheckResult, Evidence } from '../types.js';
 const HIGH_IMPACT_TOOLS = ['deploy', 'publish'];
 const SHELL_TOOLS = ['bash', 'shell', 'exec', 'terminal'];
 
-export function checkHumanTrust(data: AuditData): CheckResult {
+export function checkHumanTrust(data: AuditData, deep?: DeepAnalysis): CheckResult {
   const code = 'ASI09';
   const title = 'Human-Agent Trust';
   const evidence: Evidence[] = [];
@@ -52,6 +52,19 @@ export function checkHumanTrust(data: AuditData): CheckResult {
   }
   if (deleteOps > 0) {
     evidence.push({ icon: 'warn', text: `${deleteOps} delete operation(s) executed without human approval gate` });
+  }
+
+  // Deep: unsolicited action detection (actions not requested by user)
+  if (deep && deep.unsolicitedActions.length > 0) {
+    evidence.push({ icon: 'warn', text: `${deep.unsolicitedActions.length} critical action(s) with no matching user request` });
+    for (const ua of deep.unsolicitedActions.slice(0, 3)) {
+      const ago = ua.timeSinceLastUserMessage
+        ? `(${Math.round(ua.timeSinceLastUserMessage / 1000)}s after last user msg)`
+        : '(no preceding user message)';
+      evidence.push({ icon: 'warn', text: `  ${ua.toolName}: ${ua.action} ${ago}` });
+    }
+    deployOps += deep.unsolicitedActions.filter((a) => a.action === 'deploy').length;
+    deleteOps += deep.unsolicitedActions.filter((a) => a.action === 'delete').length;
   }
 
   evidence.push({ icon: 'missing', text: 'No approval routing — critical actions not routed for human review' });
